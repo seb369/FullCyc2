@@ -1,0 +1,652 @@
+---
+title: "Incorporator life history strategies"
+author: "Samuel Barnett"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+## Introduction
+
+### Initialization
+```{r}
+# For data handling
+library(dplyr)
+library(phyloseq)
+
+# For plotting
+library(ggplot2)
+
+# Set color schemes
+eco.col = c(agriculture="#00BA38", meadow="#619CFF", forest="#F8766D")
+landuse.col = c("Cropland"="#00BA38", "Old-field"="#619CFF", "Forest"="#F8766D")
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+# Dataframe for converting day to a time period (early and late)
+subtime.df = data.frame(day = c(1, 3, 6, 14, 1, 3, 6, 14,
+                                6, 14, 30, 6, 14, 30, 6, 14, 30),
+                        substrate = c("13C-Xyl", "13C-Xyl", "13C-Xyl", "13C-Xyl",
+                                      "13C-Ami", "13C-Ami", "13C-Ami", "13C-Ami",
+                                      "13C-Van", "13C-Van", "13C-Van", 
+                                      "13C-Cel", "13C-Cel", "13C-Cel",
+                                      "13C-Pal", "13C-Pal", "13C-Pal"),
+                        period = c("Early", "Early", "Late", "Late",
+                                   "Early", "Early", "Late", "Late",
+                                   "Early", "Late", "Late",
+                                   "Early", "Early", "Late",
+                                   "Early", "Early", "Late"),
+                        Ctype = c("DOM", "DOM", "DOM", "DOM",
+                                  "DOM", "DOM", "DOM", "DOM",
+                                  #"Van", "Van", "Van",
+                                  "DOM", "DOM", "DOM",
+                                  "POM", "POM", "POM",
+                                  "POM", "POM", "POM"))
+
+```
+
+### Data
+```{r}
+# Get the l2fc dataframe and add in columns indicating the land-use, labeled substrate, and day
+l2fc.df = readRDS(file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_l2fc_testoutput.rds") %>%
+  mutate(ecosystem  = factor(gsub(".+ecosystem == [ \']*([A-z]+).+", "\\1", .id),
+                             levels = c("agriculture", "meadow", "forest")),
+         day  = gsub(".+day == [ \']*([0-9]+).+", "\\1", .id),
+         substrate = factor(gsub(".+(13C-[A-z]+).+", "\\1", .id),
+                            levels = c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")))
+
+# Mapping OTUs to FullCyc2 (Both BLAST and mothur aligned)
+BLAST2FC1.df = read.table("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/FC2_to_FC1_blast.txt", header=FALSE, sep="\t")
+colnames(BLAST2FC1.df) = c("qaccver", "saccver", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore")
+mothur_aligned.df = read.table("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/all_combined_map.txt", header=TRUE, sep="\t")
+FC1_LHs.df = read.table("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/FullCyc_incorporators.txt", header=TRUE, sep="\t") %>%
+  rename(FC1_OTU = OTU)
+
+# rRNA gene copy number predictions (from paprica)
+#ribosome_counts.df = read.csv("/Users/sambarnett/Desktop/FullCyc2_incorporators.bacteria.unique_seqs.csv") %>%
+ribosome_counts.df = read.csv("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/paprica_final/final_incorp.bacteria.unique_seqs.csv") %>%
+  select(name, abundance_corrected) %>%
+  mutate(count = 1/abundance_corrected) %>%
+  rename(OTU = name)
+```
+
+## rRNA copy number predictions
+
+### Early timepoints
+```{r, fig.height=3.5, fig.width=7}
+sub.changes = data.frame(substrate = c("13C-Ami", "13C-Xyl", "13C-Van", "13C-Cel", "13C-Pal"), 
+                         sub_long = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))
+eco.changes = data.frame(ecosystem = c("agriculture", "meadow", "forest"), 
+                         land_use = c("Cropland", "Old-field", "Forest"))
+
+early_rrn.df = l2fc.df %>%
+  filter(padj < 0.05) %>%
+  mutate(day = as.numeric(day)) %>%
+  left_join(subtime.df, by=c("day", "substrate")) %>%
+  filter(period == "Early") %>%
+  left_join(sub.changes, by="substrate") %>%
+  left_join(eco.changes, by="ecosystem") %>%
+  select(OTU, land_use, sub_long, period, Ctype) %>%
+  unique() %>%
+  left_join(ribosome_counts.df, by="OTU") %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+early_substrate_rrn.kruskal.res = data.frame()
+for (lu in c("Cropland", "Old-field", "Forest")){
+  ktest.res = kruskal.test(count~sub_long, data=filter(early_rrn.df, land_use == lu))
+  if (p.adjust(ktest.res$p.value, n=3, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(count~sub_long, data=filter(early_rrn.df, land_use == lu))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(land_use = lu, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=3, method="BH"),
+                              sub_long = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(sub_long = gsub("acid", " acid", sub_long))
+  early_substrate_rrn.kruskal.res = rbind(early_substrate_rrn.kruskal.res, sub.posthoc.df)
+}
+early_substrate_rrn.kruskal.res = early_substrate_rrn.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+early_substrate_rrn.plot = ggplot(data=early_rrn.df, aes(x=sub_long, y=count)) +
+  geom_violin(aes(fill=sub_long)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=early_substrate_rrn.kruskal.res, 
+            y=max(early_rrn.df$count, na.rm = TRUE)+1, 
+            aes(x=sub_long, label=group), size=4) +
+  lims(y=c(0, max(early_rrn.df$count, na.rm = TRUE)+1)) +
+  labs(x="Substrate", y="Predicted rRNA copy number") +
+  facet_wrap(~land_use, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+early_substrate_rrn.plot
+
+early_substrate_rrn.kruskal.res
+
+```
+
+```{r, fig.height=3.5, fig.width=7}
+early_eco_rrn.kruskal.res = data.frame()
+for (subC in c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid")){
+  ktest.res = kruskal.test(count~land_use, data=filter(early_rrn.df, sub_long == subC))
+  if (p.adjust(ktest.res$p.value, n=5, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(count~land_use, data=mutate(filter(early_rrn.df, sub_long == subC), land_use = gsub("-", "", land_use)))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(sub_long = subC, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=5, method="BH"),
+                              land_use = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(land_use = gsub("Oldfield", "Old-field", land_use))
+  early_eco_rrn.kruskal.res = rbind(early_eco_rrn.kruskal.res, sub.posthoc.df)
+}
+early_eco_rrn.kruskal.res = early_eco_rrn.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+
+early_eco_rrn.plot = ggplot(data=early_rrn.df, aes(x=land_use, y=count)) +
+  geom_violin(aes(fill=land_use)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=early_eco_rrn.kruskal.res, 
+            y=max(early_rrn.df$count, na.rm = TRUE)+1, 
+            aes(x=land_use, label=group), size=4) +
+  scale_fill_manual(values=landuse.col) +
+  lims(y=c(0, max(early_rrn.df$count, na.rm = TRUE)+1)) +
+  labs(x="Land use", y="Predicted rRNA gene copy number") +
+  facet_wrap(~sub_long, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+early_eco_rrn.plot
+early_eco_rrn.kruskal.res
+
+
+ggsave(early_eco_rrn.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_4.tiff", 
+       device = "tiff", width = 7, height = 3.5, units = "in")
+
+
+```
+
+### Late timepoints
+```{r, fig.height=3.5, fig.width=7}
+sub.changes = data.frame(substrate = c("13C-Ami", "13C-Xyl", "13C-Van", "13C-Cel", "13C-Pal"), 
+                         sub_long = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))
+eco.changes = data.frame(ecosystem = c("agriculture", "meadow", "forest"), 
+                         land_use = c("Cropland", "Old-field", "Forest"))
+
+late_rrn.df = l2fc.df %>%
+  filter(padj < 0.05) %>%
+  mutate(day = as.numeric(day)) %>%
+  left_join(subtime.df, by=c("day", "substrate")) %>%
+  filter(period == "Late") %>%
+  left_join(sub.changes, by="substrate") %>%
+  left_join(eco.changes, by="ecosystem") %>%
+  select(OTU, land_use, sub_long, period, Ctype) %>%
+  unique() %>%
+  left_join(ribosome_counts.df, by="OTU") %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+late_substrate_rrn.kruskal.res = data.frame()
+for (lu in c("Cropland", "Old-field", "Forest")){
+  ktest.res = kruskal.test(count~sub_long, data=filter(late_rrn.df, land_use == lu))
+  if (p.adjust(ktest.res$p.value, n=3, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(count~sub_long, data=filter(late_rrn.df, land_use == lu))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(land_use = lu, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=3, method="BH"),
+                              sub_long = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(sub_long = gsub("acid", " acid", sub_long))
+  late_substrate_rrn.kruskal.res = rbind(late_substrate_rrn.kruskal.res, sub.posthoc.df)
+}
+late_substrate_rrn.kruskal.res = late_substrate_rrn.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+late_substrate_rrn.plot = ggplot(data=late_rrn.df, aes(x=sub_long, y=count)) +
+  geom_violin(aes(fill=sub_long)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=filter(late_substrate_rrn.kruskal.res, padj < 0.05), 
+            y=max(late_rrn.df$count, na.rm = TRUE)+1, 
+            aes(x=sub_long, label=group), size=4) +
+  lims(y=c(0, max(late_rrn.df$count, na.rm = TRUE)+1)) +
+  labs(x="Substrate", y="Predicted rRNA copy number") +
+  facet_wrap(~land_use, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+late_substrate_rrn.plot
+
+late_substrate_rrn.kruskal.res
+```
+
+```{r, fig.height=3.5, fig.width=7}
+late_eco_rrn.kruskal.res = data.frame()
+for (subC in c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid")){
+  ktest.res = kruskal.test(count~land_use, data=filter(late_rrn.df, sub_long == subC))
+  if (p.adjust(ktest.res$p.value, n=5, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(count~land_use, data=mutate(filter(late_rrn.df, sub_long == subC), land_use = gsub("-", "", land_use)))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(sub_long = subC, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=5, method="BH"),
+                              land_use = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(land_use = gsub("Oldfield", "Old-field", land_use))
+  late_eco_rrn.kruskal.res = rbind(late_eco_rrn.kruskal.res, sub.posthoc.df)
+}
+late_eco_rrn.kruskal.res = late_eco_rrn.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+
+late_eco_rrn.plot = ggplot(data=late_rrn.df, aes(x=land_use, y=count)) +
+  geom_violin(aes(fill=land_use)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=filter(late_eco_rrn.kruskal.res, padj < 0.05), 
+            y=max(late_rrn.df$count, na.rm = TRUE)+1, 
+            aes(x=land_use, label=group), size=4) +
+  scale_fill_manual(values=landuse.col) +
+  lims(y=c(0, max(late_rrn.df$count, na.rm = TRUE)+1)) +
+  labs(x="Land-use", y="Predicted rRNA gene copy number") +
+  facet_wrap(~sub_long, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+late_eco_rrn.plot
+late_eco_rrn.kruskal.res
+
+ggsave(late_eco_rrn.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_10.tiff", 
+       device = "tiff", width = 7, height = 3.5, units = "in")
+```
+
+
+
+## Amino Acid pathways
+
+```{r}
+#pathways.df = read.csv("/Users/sambarnett/Desktop/FullCyc2_incorporators.bacteria.pathways.csv") %>%
+pathways.df = read.csv("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/paprica_final/final_incorp.bacteria.pathways.csv") %>%
+  tidyr::gather(key="edge_num", value="Predicted", -X) %>%
+  rename(pathway = X) %>%
+  mutate(edge_num = as.numeric(as.character(gsub("X", "", edge_num))))
+
+#edge2OTU = read.csv("/Users/sambarnett/Desktop/FullCyc2_incorporators.bacteria.unique_seqs.csv") %>%
+edge2OTU = read.csv("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/paprica_final/final_incorp.bacteria.unique_seqs.csv") %>%
+  select(edge_num, name) %>%
+  rename(OTU = name)
+
+AA.list = c("L-arginine biosynthesis", "L-histidine biosynthesis", "L-lysine biosynthesis",
+            "L-aspartate biosynthesis", "L-glutamate biosynthesis",
+            "L-serine biosynthesis", "L-threonine biosynthesis", "L-asparagine biosynthesis", "L-glutamine biosynthesis",
+            "L-cysteine biosynthesis", "glycine biosynthesis", "L-proline biosynthesis",
+            "L-alanine biosynthesis", "L-valine biosynthesis", "L-isoleucine biosynthesis", "L-leucine biosynthesis",
+            "L-methionine biosynthesis", "L-phenylalanine biosynthesis", "L-tyrosine biosynthesis", "L-tryptophan biosynthesis")
+path2AA = data.frame()
+for (AA in AA.list){
+  path2AA = rbind(path2AA, data.frame(AminoAcid = AA, pathway = grep(AA, unique(pathways.df$pathway), value=TRUE)))
+}
+
+AA_synth.df = pathways.df %>%
+  inner_join(path2AA, by="pathway") %>%
+  group_by(edge_num, AminoAcid) %>%
+  summarize(Predicted = sum(Predicted)) %>%
+  as.data.frame() %>%
+  mutate(Predicted = ifelse(Predicted > 0, 1, 0)) %>%
+  inner_join(edge2OTU, by="edge_num")
+
+AA_synth.sum = AA_synth.df %>%
+  group_by(OTU) %>%
+  summarize(n_AA = sum(Predicted)) %>%
+  as.data.frame
+
+```
+
+```{r, fig.height=3.5, fig.width=7}
+sub.changes = data.frame(substrate = c("13C-Ami", "13C-Xyl", "13C-Van", "13C-Cel", "13C-Pal"), 
+                         sub_long = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))
+eco.changes = data.frame(ecosystem = c("agriculture", "meadow", "forest"), 
+                         land_use = c("Cropland", "Old-field", "Forest"))
+
+early_AA.df = l2fc.df %>%
+  filter(padj < 0.05) %>%
+  mutate(day = as.numeric(day)) %>%
+  left_join(subtime.df, by=c("day", "substrate")) %>%
+  filter(period == "Early") %>%
+  left_join(sub.changes, by="substrate") %>%
+  left_join(eco.changes, by="ecosystem") %>%
+  select(OTU, land_use, sub_long, period, Ctype) %>%
+  unique() %>%
+  left_join(AA_synth.sum, by="OTU") %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+early_substrate_AA.kruskal.res = data.frame()
+for (lu in c("Cropland", "Old-field", "Forest")){
+  ktest.res = kruskal.test(n_AA~sub_long, data=filter(early_AA.df, land_use == lu))
+  if (p.adjust(ktest.res$p.value, n=3, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(n_AA~sub_long, data=filter(early_AA.df, land_use == lu))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(land_use = lu, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=3, method="BH"),
+                              sub_long = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(sub_long = gsub("acid", " acid", sub_long))
+  early_substrate_AA.kruskal.res = rbind(early_substrate_AA.kruskal.res, sub.posthoc.df)
+}
+early_substrate_AA.kruskal.res = early_substrate_AA.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+early_substrate_AA.plot = ggplot(data=early_AA.df, aes(x=sub_long, y=n_AA)) +
+  geom_violin(aes(fill=sub_long)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=early_substrate_AA.kruskal.res, 
+            y=22, aes(x=sub_long, label=group), size=4) +
+  lims(y=c(0, 22)) +
+  labs(x="Substrate", y="Predicted Amino acid pathways") +
+  facet_wrap(~land_use, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+early_substrate_AA.plot
+
+early_substrate_AA.kruskal.res
+
+```
+
+```{r, fig.height=3.5, fig.width=7}
+early_eco_AA.kruskal.res = data.frame()
+for (subC in c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid")){
+  ktest.res = kruskal.test(n_AA~land_use, data=filter(early_AA.df, sub_long == subC))
+  if (p.adjust(ktest.res$p.value, n=5, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(n_AA~land_use, data=mutate(filter(early_AA.df, sub_long == subC), land_use = gsub("-", "", land_use)))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(sub_long = subC, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=5, method="BH"),
+                              land_use = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(land_use = gsub("Oldfield", "Old-field", land_use))
+  early_eco_AA.kruskal.res = rbind(early_eco_AA.kruskal.res, sub.posthoc.df)
+}
+early_eco_AA.kruskal.res = early_eco_AA.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+
+early_eco_AA.plot = ggplot(data=early_AA.df, aes(x=land_use, y=n_AA)) +
+  geom_violin(aes(fill=land_use)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=filter(early_eco_AA.kruskal.res, padj < 0.05), 
+            y=22, aes(x=land_use, label=group), size=4) +
+  scale_fill_manual(values=landuse.col) +
+  lims(y=c(0, 22)) +
+  labs(x="Land use", y="Predicted Amino acid pathways") +
+  facet_wrap(~sub_long, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+early_eco_AA.plot
+early_eco_AA.kruskal.res
+```
+
+### Late incorporators
+
+```{r, fig.height=3.5, fig.width=7}
+sub.changes = data.frame(substrate = c("13C-Ami", "13C-Xyl", "13C-Van", "13C-Cel", "13C-Pal"), 
+                         sub_long = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))
+eco.changes = data.frame(ecosystem = c("agriculture", "meadow", "forest"), 
+                         land_use = c("Cropland", "Old-field", "Forest"))
+
+late_AA.df = l2fc.df %>%
+  filter(padj < 0.05) %>%
+  mutate(day = as.numeric(day)) %>%
+  left_join(subtime.df, by=c("day", "substrate")) %>%
+  filter(period == "Late") %>%
+  left_join(sub.changes, by="substrate") %>%
+  left_join(eco.changes, by="ecosystem") %>%
+  select(OTU, land_use, sub_long, period, Ctype) %>%
+  unique() %>%
+  left_join(AA_synth.sum, by="OTU") %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+late_substrate_AA.kruskal.res = data.frame()
+for (lu in c("Cropland", "Old-field", "Forest")){
+  ktest.res = kruskal.test(n_AA~sub_long, data=filter(late_AA.df, land_use == lu))
+  if (p.adjust(ktest.res$p.value, n=3, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(n_AA~sub_long, data=filter(late_AA.df, land_use == lu))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(land_use = lu, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=3, method="BH"),
+                              sub_long = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(sub_long = gsub("acid", " acid", sub_long))
+  late_substrate_AA.kruskal.res = rbind(late_substrate_AA.kruskal.res, sub.posthoc.df)
+}
+late_substrate_AA.kruskal.res = late_substrate_AA.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+late_substrate_AA.plot = ggplot(data=late_AA.df, aes(x=sub_long, y=n_AA)) +
+  geom_violin(aes(fill=sub_long)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=filter(late_substrate_AA.kruskal.res, padj < 0.05), 
+            y=22, aes(x=sub_long, label=group), size=4) +
+  lims(y=c(0, 22)) +
+  labs(x="Substrate", y="Predicted Amino acid pathways") +
+  facet_wrap(~land_use, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+late_substrate_AA.plot
+
+late_substrate_AA.kruskal.res
+
+```
+
+```{r, fig.height=3.5, fig.width=7}
+late_eco_AA.kruskal.res = data.frame()
+for (subC in c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid")){
+  ktest.res = kruskal.test(n_AA~land_use, data=filter(late_AA.df, sub_long == subC))
+  if (p.adjust(ktest.res$p.value, n=5, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(n_AA~land_use, data=mutate(filter(late_AA.df, sub_long == subC), land_use = gsub("-", "", land_use)))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(sub_long = subC, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=5, method="BH"),
+                              land_use = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(land_use = gsub("Oldfield", "Old-field", land_use))
+  late_eco_AA.kruskal.res = rbind(late_eco_AA.kruskal.res, sub.posthoc.df)
+}
+late_eco_AA.kruskal.res = late_eco_AA.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Amino acids", "Xylose", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+
+late_eco_AA.plot = ggplot(data=late_AA.df, aes(x=land_use, y=n_AA)) +
+  geom_violin(aes(fill=land_use)) +
+  geom_boxplot(width=0.15) +
+  geom_text(data=filter(late_eco_AA.kruskal.res, padj < 0.05), 
+            y=22, aes(x=land_use, label=group), size=4) +
+  scale_fill_manual(values=landuse.col) +
+  lims(y=c(0, 22)) +
+  labs(x="Land use", y="Predicted Amino acid pathways") +
+  facet_wrap(~sub_long, nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=12),
+        legend.position = "none")
+
+late_eco_AA.plot
+late_eco_AA.kruskal.res
+```
+
+## Plot together
+
+```{r, fig.height=5, fig.width=7}
+# Early across land use
+cowplot::plot_grid(early_eco_rrn.plot + 
+                     theme(axis.text.x = element_blank(), axis.title.x = element_blank())+
+                     labs(x="Substrate", y="Predicted rRNA\ncopy number"), 
+                   early_eco_AA.plot +
+                     labs(x="Substrate", y="Predicted amino acid\nsynthesis pathways"), 
+                   ncol = 1, rel_heights = c(0.8, 1), labels = c("A", "B"))
+
+# Late across land use
+cowplot::plot_grid(late_eco_rrn.plot + 
+                     theme(axis.text.x = element_blank(), axis.title.x = element_blank())+
+                     labs(x="Substrate", y="Predicted rRNA\ncopy number"), 
+                   late_eco_AA.plot +
+                     labs(x="Substrate", y="Predicted amino acid\nsynthesis pathways"), 
+                   ncol = 1, rel_heights = c(0.8, 1), labels = c("A", "B"))
+
+# Early across substrate
+cowplot::plot_grid(early_substrate_rrn.plot + 
+                     theme(axis.text.x = element_blank(), axis.title.x = element_blank())+
+                     labs(x="Substrate", y="Predicted rRNA\ncopy number"), 
+                   early_substrate_AA.plot +
+                     labs(x="Substrate", y="Predicted amino acid\nsynthesis pathways"), 
+                   ncol = 1, rel_heights = c(0.8, 1), labels = c("A", "B"))
+
+# Late across substrate
+cowplot::plot_grid(late_substrate_rrn.plot + 
+                     theme(axis.text.x = element_blank(), axis.title.x = element_blank())+
+                     labs(x="Substrate", y="Predicted rRNA\ncopy number"), 
+                   late_substrate_AA.plot +
+                     labs(x="Substrate", y="Predicted amino acid\nsynthesis pathways"), 
+                   ncol = 1, rel_heights = c(0.8, 1), labels = c("A", "B"))
+
+
+```
+
+
+## Plot 1 for publication (Fig 5)
+
+```{r, fig.height=2, fig.width=3.46457}
+early_eco_rrn.kruskal.res = data.frame()
+for (subC in c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid")){
+  ktest.res = kruskal.test(count~land_use, data=filter(early_rrn.df, sub_long == subC))
+  if (p.adjust(ktest.res$p.value, n=5, method="BH") < 0.05){
+    posthoc.res = FSA::dunnTest(count~land_use, data=mutate(filter(early_rrn.df, sub_long == subC), land_use = gsub("-", "", land_use)))
+    posthoc.res = posthoc.res$res
+    posthoc.cld = rcompanion::cldList(comparison = posthoc.res$Comparison,
+                                      p.value = posthoc.res$P.adj,
+                                      threshold = 0.05)
+  } else{
+    posthoc.cld = data.frame(Group = NA, Letter = NA)
+  }
+  sub.posthoc.df = data.frame(sub_long = subC, X2 = ktest.res$statistic, Pvalue = ktest.res$p.value,
+                              padj = p.adjust(ktest.res$p.value, n=5, method="BH"),
+                              land_use = posthoc.cld$Group, group = posthoc.cld$Letter,
+                              stringsAsFactors = FALSE) %>%
+    mutate(land_use = gsub("Oldfield", "Old-field", land_use))
+  early_eco_rrn.kruskal.res = rbind(early_eco_rrn.kruskal.res, sub.posthoc.df)
+}
+early_eco_rrn.kruskal.res = early_eco_rrn.kruskal.res %>%
+  mutate(sub_long = factor(sub_long, levels = c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid"))) %>%
+  mutate(land_use = factor(land_use, levels = c("Cropland", "Old-field", "Forest")))
+
+
+early_eco_rrn.plot = ggplot(data=early_rrn.df, aes(x=land_use, y=count)) +
+  geom_violin(aes(fill=land_use)) +
+  geom_boxplot(width=0.15, outlier.size = 0.5) +
+  geom_text(data=early_eco_rrn.kruskal.res, 
+            y=max(early_rrn.df$count, na.rm = TRUE)+1, 
+            aes(x=land_use, label=group), size=(5*5/14)) +
+  scale_fill_manual(values=landuse.col) +
+  lims(y=c(0, max(early_rrn.df$count, na.rm = TRUE)+1)) +
+  labs(x="Land use", y="Predicted rRNA\ngene copy number") +
+  facet_wrap(~factor(sub_long, levels=c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid")), nrow=1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size=6),
+        axis.text.y = element_text(size=6),
+        axis.title = element_text(size=7),
+        axis.ticks = element_line(size=0.2),
+        strip.text = element_text(size=6),
+        legend.position = "none")
+
+early_eco_rrn.plot
+
+
+ggsave(early_eco_rrn.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig5.tiff", 
+       device = "tiff", width = 3.46457, height = 2, units = "in")
+
+
+```
+
+
+
+
+
+
