@@ -13,7 +13,7 @@ output:
 Now that we have use MW-HR-SIP to identify incorporators, I want to take a closer look at these labeled OTUs. Specifically, I want to see if they differ systematically across land use regimes, substrates and timepoints. 
 
 #### Initialization
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # For data handling
 library(dplyr)
 library(phyloseq)
@@ -40,7 +40,7 @@ g_legend<-function(a.gplot){
 
 #### Data
 Incorporator status can be found in the log2 fold change dataframe.
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get the l2fc dataframe and add in columns indicating the land-use, labeled substrate, and day
 l2fc.df = readRDS(file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_l2fc_testoutput.rds") %>%
   mutate(ecosystem  = factor(gsub(".+ecosystem == [ \']*([A-z]+).+", "\\1", .id),
@@ -53,7 +53,7 @@ l2fc.df = readRDS(file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullc
 
 The OTU abundances and phylogeny can be found in the master phyloseq object.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Import phyloseq object
 physeq = readRDS("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_backups_8_8_19/phyloseq/fullcyc2physeq.RDS")
 
@@ -81,7 +81,7 @@ bulk.physeq = prune_taxa(taxa_sums(bulk.physeq) > 0, bulk.physeq)
 
 For many of the following analyses I want a rarefied OTU table. This is one way to correct for differing sequencing depths across all my samples. I will set the seed for this process so that I can replicate this analysis if necessary (seed = 4242).
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 unfrac.rare.physeq = rarefy_even_depth(unfrac.physeq, rngseed=4242)
 bulk.rare.physeq = rarefy_even_depth(bulk.physeq, rngseed=4242)
 ```
@@ -90,7 +90,7 @@ bulk.rare.physeq = rarefy_even_depth(bulk.physeq, rngseed=4242)
 
 Before proceeding too far, lets just take a look a few inital stats.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Total number of OTUs passing filtering (those that went into MW-HR-SIP)
 print(paste("There are", nrow(unique(select(l2fc.df, OTU))), "total OTUs passing filter"))
 
@@ -114,7 +114,7 @@ print(paste("There are", nrow(unique(select(filter(l2fc.df, padj < 0.05, !(is.na
 ```
 
 Now break this up into table format
-```{r}
+```{r, message=FALSE, warning=FALSE}
 l2fc.df %>%
   filter(padj < 0.05) %>%
   select(OTU, ecosystem, substrate) %>%
@@ -131,7 +131,7 @@ The first thing I want to do is see how incorporators differ between land-use re
 
 First make the plot showing which land use regimes incorporators are labeled in and which ones they are at least detected in.
 
-```{r, fig.height=2, fig.width=3.46457}
+```{r, fig.height=2, fig.width=3.46457, message=FALSE, warning=FALSE}
 # Get a table of each OTU and its labeling or detection pattern across land use regimes.
 incorp_eco.df = l2fc.df %>%
   filter(padj < 0.05) %>%
@@ -164,7 +164,6 @@ venn_eco.plot = plot(euler(venn_eco.df, by = list(test)),
 x.grob <- textGrob("Detection                                      Labeling", gp=gpar(fontface="bold", col="black", fontsize=7))
 
 venn_eco.plot = grid.arrange(arrangeGrob(venn_eco.plot, top = x.grob))
-venn_eco.plot
 
 
 ```
@@ -173,7 +172,7 @@ venn_eco.plot
 
 First make the plot showing which land use regimes incorporators are labeled in and which ones they are at least detected in.
 
-```{r, fig.height=3.5, fig.width=7}
+```{r, fig.height=3.5, fig.width=7, message=FALSE, warning=FALSE}
 # Get a table of each OTU and its labeling or detection pattern across land use regimes.
 incorp_subeco.df = l2fc.df %>%
   filter(padj < 0.05) %>%
@@ -210,7 +209,7 @@ venn_subeco.plot = plot(euler(venn_subeco.df, by = list(test, substrate)),
                         quantities = TRUE, labels = NULL,
                         fills=eco.col, strip=FALSE)
 
-ggsave(venn_subeco.plot, file="/Users/sambarnett/Desktop/Substrate_venns_unlab.tiff", device = "tiff")
+#ggsave(venn_subeco.plot, file="/Users/sambarnett/Desktop/Substrate_venns_unlab.tiff", device = "tiff")
 
 # Add axis labels
 x.grob <- textGrob("Xylose       Amino acids        Vanillin        Cellulose     Palmitic acid", gp=gpar(fontface="bold", col="black", fontsize=15))
@@ -223,7 +222,7 @@ grid.arrange(arrangeGrob(venn_subeco.plot, top = x.grob, left = y.grob))
 
 ### Across time within substrate and ecosystem
 
-```{r, fig.height=3.34646, fig.width=3.34646}
+```{r, fig.height=3.34646, fig.width=3.34646, message=FALSE, warning=FALSE}
 # Dataframe for converting day to a time period (early and late)
 timeperiods = data.frame(day = c(1, 3, 6, 14, 1, 3, 6, 14,
                                  6, 14, 30, 6, 14, 30, 6, 14, 30),
@@ -274,7 +273,7 @@ Lets take a brief look at the taxonomy of the incorporators across land-use and 
 ### OTU counts per Phylum
 First I'll look specifically at the phylum (class for proteobacteria) level and how many incorporator OTUs are classified to each phylum (class for Proteobacteria).
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Get OTU counts for each taxa
 incorp_phyla.df = l2fc.df %>%
   filter(padj < 0.05) %>%
@@ -351,12 +350,11 @@ taxa_count.plot = cowplot::plot_grid(sol.count.plot, insol.count.plot, nrow=1, r
 taxa_count.plot = arrangeGrob(taxa_count.plot, bottom = x.grob, left = y.grob)
 taxa_count.plot = cowplot::plot_grid(taxa.leg, taxa_count.plot, nrow=2, rel_heights = c(0.4, 1))
 taxa_count.plot = grid.arrange(arrangeGrob(taxa_count.plot, top = leg.grob))
-taxa_count.plot
 ```
 
 To make this a bit easier to understand, I'll group days based on whether they are early (i.e. before or around the day of peak mineralization for a given substrate) or late (i.e. after the day of peak mineralization for a given substrate).
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Set timeperiods for each timepoint
 timeperiods = data.frame(day = c(1, 3, 6, 14, 1, 3, 6, 14,
                                  6, 14, 30, 6, 14, 30, 6, 14, 30),
@@ -405,10 +403,10 @@ incorp_taxa_count.df = incorp_phyla.df %>%
 
 Plot this as a stacked bar plot
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 
 # Set colors for the taxa
-source("/Users/sambarnett/Desktop/paul_tol_colors.R")
+source("/Users/sambarnett/Documents/Misc_code/paul_tol_colors.R")
 taxa = unique(incorp_taxa_count.df[incorp_taxa_count.df$taxa != "OTU count < 5",]$taxa2)
 taxa.cols = c(paultol_colors(length(taxa)), "#777777")
 names(taxa.cols) = c(sort(taxa), "OTU count < 5")
@@ -436,40 +434,11 @@ taxa_count_grouped.plot
 
 ```
 
-I also want at table with all this data, but this time without grouping the OTUs with less than 5 OTUs.
-
-```{r}
-incorp_phyla.df %>%
-  select(OTU, taxa, ecosystem) %>%
-  unique %>%
-  group_by(taxa, ecosystem) %>%
-  summarize(OTU_count = n()) %>%
-  as.data.frame %>%
-  tidyr::spread(key=ecosystem, value=OTU_count)
-
-incorp_phyla.df %>%
-  group_by(ecosystem, substrate, period) %>%
-  summarize(OTU_count = n()) %>%
-  as.data.frame %>%
-  tidyr::spread(key=ecosystem, value=OTU_count)
-
-incorp_phyla.df %>%
-  group_by(taxa, ecosystem, substrate, period) %>%
-  summarize(OTU_count = n()) %>%
-  as.data.frame %>%
-  tidyr::spread(key=ecosystem, value=OTU_count) %>%
-  replace(is.na(.), 0) %>%
-  mutate(substrate = factor(substrate, levels = c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal"))) %>%
-  arrange(taxa, substrate, period)
-
-
-```
-
 ### Phylum abundances
 
 Now I want to see how abundant the incorporators are across the microcosms, grouped by their phylum.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get metadata
 metadata = data.frame(sample_data(unfrac.rare.physeq)) %>%
   rename(microcosm_substrate = substrate) %>%
@@ -514,9 +483,9 @@ OTU_table.taxa.df = inner_join(OTU_table.df, incorp_phyla.df, by = c("OTU", "eco
 
 Now I'll plot these abundances.
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Set colors for the taxa
-source("/Users/sambarnett/Desktop/paul_tol_colors.R")
+source("/Users/sambarnett/Documents/Misc_code/paul_tol_colors.R")
 taxa = unique(OTU_table.taxa.df[OTU_table.taxa.df$taxa != "Less than 1%",]$taxa)
 taxa.cols = c(paultol_colors(length(taxa)), "#777777")
 names(taxa.cols) = c(sort(taxa), "Less than 1%")
@@ -597,644 +566,8 @@ ggplot(data=OTU_table.taxa.sum, aes(x=position, y=taxa_abd)) +
 
 ```
 
-### Specific groups
-
-Now its time to look at a few specific groups of incorporators.
-
-```{r}
-# Get metadata
-metadata = data.frame(sample_data(unfrac.rare.physeq)) %>%
-  rename(microcosm_substrate = substrate) %>%
-  select(X.Sample, ecosystem, day, microcosm_substrate, microcosm_replicate)
-
-# Get incorporator OTU relative abundances in each microcosm
-incorp_OTU_table.df = data.frame(otu_table(transform_sample_counts(unfrac.rare.physeq, function(x) x / sum(x)))) %>%
-  tibble::rownames_to_column(var="OTU") %>%
-  filter(OTU %in% unique(l2fc.df[l2fc.df$padj < 0.05,]$OTU)) %>%
-  tidyr::gather(key="X.Sample", value="abundance", -OTU) %>%
-  mutate(X.Sample = gsub("13C.", "13C-", gsub("12C.", "12C-", gsub("H2O.", "H2O-", X.Sample))),
-         abundance = abundance*100) %>%
-  left_join(metadata, by="X.Sample")
-```
-
-#### Top 5 most abundant OTUs
-```{r}
-incorp_status.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, ecosystem, day)
-
-incorp_class.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, ecosystem, day, Domain, Phylum, Class, Order, Family, Genus, Species)
-
-top5_incorp.df = incorp_OTU_table.df %>%
-  group_by(OTU, ecosystem, day) %>%
-  summarize(mean_abundance = mean(abundance),
-            sd_abundance = sd(abundance),
-            n_microcosms = n()) %>%
-  as.data.frame %>%
-  mutate(SE_abundance = sd_abundance/sqrt(n_microcosms)) %>%
-  group_by(OTU, ecosystem) %>%
-  mutate(max_abundance = max(mean_abundance)) %>%
-  ungroup %>%
-  group_by(ecosystem) %>%
-  mutate(rank = dense_rank(desc(max_abundance))) %>%
-  ungroup %>%
-  arrange(rank) %>%
-  filter(rank <= 5)
-```
-
-
-
-#### Deltaproteobacteria
-
-Some deltaproteobacteria are known to be predators. Lets see if we see any signs of secondary feeding by these organisms. Secondary feeding might be indicated by late incorporation and/or increased abundance late in the experiment of these OTUs.
-
-```{r, fig.height=6.69291, fig.width=6.69291}
-# Get Deltaproteobacteria incorporators
-delta_incorp.df = l2fc.df %>%
-  filter(padj < 0.05, Class == "Deltaproteobacteria") %>%
-  select(OTU, ecosystem, day, substrate, Phylum, Class, Order, Family, Genus, Species) %>%
-  mutate(day = as.numeric(day))
-
-# Get these incorporator taxonomies
-delta_incorp.tax.df = delta_incorp.df %>%
-  select(OTU, Phylum, Class, Order, Family, Genus, Species)
-  
-# Get these incorporator statuses
-delta_incorp.status.df = delta_incorp.df %>%
-  select(OTU, ecosystem, day, substrate) %>%
-  mutate(status = "Labeled") %>%
-  tidyr::spread(key="substrate", value = "status")
-
-# Merge dataframes to get abundances and status of these incorporators
-delta_incorp_abd.df = incorp_OTU_table.df %>%
-  filter(microcosm_substrate != "H2O-Con") %>%
-  select(OTU, X.Sample, abundance, ecosystem, day) %>%
-  filter(OTU %in% unique(delta_incorp.df$OTU)) %>%
-  full_join(delta_incorp.status.df, by = c("OTU", "ecosystem", "day")) %>%
-  tidyr::gather(key="substrate", value="status", -OTU, -X.Sample, -abundance, -ecosystem, -day) %>%
-  mutate(status = ifelse(is.na(status), "Unlabeled", "Labeled")) %>%
-  left_join(delta_incorp.tax.df)
-  
-# Get the average abundance of each incorporator on each day and ecosystem
-delta_incorp_abd.sum = delta_incorp_abd.df %>%
-  group_by(OTU, ecosystem, day, substrate, status, Phylum, Class, Order, Family, Genus, Species) %>%
-  summarize(mean_abd = mean(abundance),
-            sd_abd = sd(abundance),
-            n_rep = n()) %>%
-  as.data.frame %>%
-  mutate(SE_abd = sd_abd/sqrt(n_rep),
-         status_num = ifelse(status == "Labeled", 1, 0)) %>%
-  group_by(OTU, ecosystem, substrate) %>%
-  mutate(max_status = max(status_num)) %>%
-  ungroup %>%
-  filter(max_status == 1) %>%
-  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")),
-         substrate = factor(substrate, levels=c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")))
-
-# Plot
-ggplot(data=delta_incorp_abd.sum, aes(x=day, y=mean_abd)) +
-  geom_line(aes(color=OTU)) +
-  geom_point(aes(color=OTU, shape=status)) +
-  scale_shape_manual(values=c(Unlabeled = 1, Labeled = 16)) +
-  labs(x="Time since substrate addition (days)", y="Mean relative abundance (% of reads)") +
-  theme_bw() +
-  theme(legend.position = "none",
-        legend.title=element_text(size=12),
-        legend.text=element_text(size=10),
-        axis.title = element_text(size=14),
-        axis.text.x = element_blank(),
-        axis.text.y = element_text(size=12),
-        axis.ticks.x = element_blank(),
-        strip.text = element_text(size=10)) +
-  facet_grid(substrate ~ ecosystem)
-```
-
-What is the abundance of labeled Deltaproteobacteria over time?
-
-```{r, fig.height=6.69291, fig.width=6.69291}
-# Get Deltaproteobacteria incorporators
-delta_incorp_status.df = l2fc.df %>%
-  filter(padj < 0.05, Class == "Deltaproteobacteria") %>%
-  select(OTU, ecosystem, day, substrate) %>%
-  mutate(day = as.numeric(day),
-         status = "Labeled") %>%
-  tidyr::spread(key=substrate, value=status)
-  
-
-# Get all Deltaproteobacteria OTUs
-delta_OTUs.df = data.frame(tax_table(unfrac.rare.physeq)) %>%
-  tibble::rownames_to_column(var="OTU") %>%
-  filter(Class == "Deltaproteobacteria")
-
-# Get OTU relative abundances for Deltaproteobacteria
-delta_abd.df = data.frame(otu_table(transform_sample_counts(unfrac.rare.physeq, function(x) x / sum(x)))) %>%
-  tibble::rownames_to_column(var="OTU") %>%
-  filter(OTU %in% delta_OTUs.df$OTU) %>%
-  tidyr::gather(key="X.Sample", value="abundance", -OTU) %>%
-  filter(abundance > 0) %>%
-  mutate(X.Sample = gsub("13C.", "13C-", gsub("12C.", "12C-", gsub("H2O.", "H2O-", X.Sample))),
-         abundance = abundance*100) %>%
-  left_join(metadata, by="X.Sample")
-
-# Get summary table of Deltaproteobacteria relative abundances and labeling
-delta_abd_lab.sum = left_join(delta_abd.df, delta_incorp_status.df, by = c("OTU", "ecosystem", "day")) %>%
-  tidyr::gather(key=substrate, value=status, -OTU, -X.Sample, -abundance, 
-                -ecosystem, -day, -microcosm_substrate, -microcosm_replicate) %>%
-  mutate(status = ifelse(is.na(status), "Unlabeled", status)) %>%
-  group_by(X.Sample, ecosystem, day, microcosm_substrate, microcosm_replicate, substrate, status) %>%
-  summarize(abundance = sum(abundance)) %>%
-  as.data.frame
-
-# Get positions for each replicate in the plot. Separating bars by their day with separate bars per replicate
-day.shift = data.frame(substrate = c("13C-Xyl", "13C-Xyl", "13C-Xyl", "13C-Xyl",
-                                     "13C-Ami", "13C-Ami", "13C-Ami", "13C-Ami",
-                                     "13C-Van", "13C-Van", "13C-Van",
-                                     "13C-Cel", "13C-Cel", "13C-Cel",
-                                     "13C-Pal", "13C-Pal", "13C-Pal"),
-                       day = c(1, 3, 6, 14, 1, 3, 6, 14,
-                               6, 14, 30, 6, 14, 30, 6, 14, 30),
-                       shift = c(0, 1, 2, 3, 0, 1, 2, 3, 
-                                 0, 1, 2, 0, 1, 2, 0, 1, 2))
-
-plot.positions = delta_abd_lab.sum %>%
-  select(X.Sample, substrate, ecosystem, day, microcosm_substrate, microcosm_replicate) %>%
-  unique %>%
-  inner_join(day.shift) %>%
-  arrange(day, microcosm_substrate, microcosm_replicate) %>%
-  group_by(ecosystem, substrate) %>%
-  mutate(rank = row_number()) %>%
-  ungroup %>%
-  mutate(position = rank + shift) %>%
-  select(X.Sample, ecosystem, substrate, position)
-
-delta_abd_lab.sum = inner_join(delta_abd_lab.sum, plot.positions, by = c("X.Sample", "ecosystem", "substrate")) %>%
-  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")),
-         substrate = factor(substrate, levels=c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")))
-
-# Plot
-ggplot(data=delta_abd_lab.sum, aes(x=position, y=abundance)) +
-  geom_bar(stat="identity", aes(fill=status, color=status)) +
-  geom_text(data=plot.xlab, aes(x=midpoint, label=day_factor), y=-0.75, size=4.5) +
-  lims(y=c(-1.25, 6.5)) +
-  labs(x="Time since substrate addition (days)", y="Relative abundance (% of reads)",
-       fill="Status", color="Status") +
-  scale_fill_manual(values=c(Labeled="red", Unlabeled="grey70")) +
-  scale_color_manual(values=c(Labeled="red", Unlabeled="grey70")) +
-  theme_bw() +
-  theme(legend.position = "right",
-        legend.title=element_text(size=12),
-        legend.text=element_text(size=10),
-        axis.title = element_text(size=14),
-        axis.text.x = element_blank(),
-        axis.text.y = element_text(size=12),
-        axis.ticks.x = element_blank(),
-        strip.text = element_text(size=10)) +
-  facet_grid(substrate~ecosystem, scales = "free")
-
-
-```
-
-How many labeled deltaproteobacteria are there in each sample?
-
-```{r, fig.height=6.69291, fig.width=6.69291}
-# Get Deltaproteobacteria incorporators
-delta_incorp.df = l2fc.df %>%
-  filter(padj < 0.05, Class == "Deltaproteobacteria") %>%
-  select(OTU, ecosystem, day, substrate, Order) %>%
-  mutate(taxa = ifelse(is.na(Order), "Unclassified", as.character(Order)),
-         day = as.numeric(day))
-
-# Get OTU counts for each order
-delta_incorp.sum = delta_incorp.df %>%
-  group_by(ecosystem, day, substrate, taxa) %>%
-  summarize(count = n()) %>%
-  as.data.frame %>%
-  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")),
-         substrate = factor(substrate, levels=c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")),
-         eco = factor(ifelse(ecosystem == "agriculture", "A",
-                             ifelse(ecosystem == "meadow", "M",
-                                    ifelse(ecosystem == "forest", "F", NA))), 
-                      levels = c("A", "M", "F")))
-
-# Set colors for the taxa
-source("/Users/sambarnett/Desktop/paul_tol_colors.R")
-taxa = unique(delta_incorp.sum[delta_incorp.sum$taxa != "Unclassified",]$taxa)
-taxa.cols = c(paultol_colors(length(taxa)), "#777777")
-names(taxa.cols) = c(sort(taxa), "Unclassified")
-
-# Plot OTU counts
-delta_DOC_count.plot = ggplot(data=delta_incorp.sum[delta_incorp.sum$substrate %in% c("13C-Xyl", "13C-Ami"),], 
-                              aes(x=eco, y=count)) +
-  geom_bar(stat="identity", aes(fill=taxa, color=taxa)) +
-  scale_fill_manual(values=taxa.cols) +
-  scale_color_manual(values=taxa.cols) +
-  theme_bw() +
-  theme(legend.position = "none",
-        axis.title = element_blank(),
-        axis.text = element_text(size=12),
-        strip.text = element_text(size=10)) +
-  facet_grid(day~substrate)
-
-delta_POC_count.plot = ggplot(data=delta_incorp.sum[delta_incorp.sum$substrate %in% c("13C-Van", "13C-Cel", "13C-Pal"),], 
-                              aes(x=eco, y=count)) +
-  geom_bar(stat="identity", aes(fill=taxa, color=taxa)) +
-  scale_fill_manual(values=taxa.cols) +
-  scale_color_manual(values=taxa.cols) +
-  theme_bw() +
-  theme(legend.position = "none",
-        axis.title = element_blank(),
-        axis.text = element_text(size=12),
-        strip.text = element_text(size=10)) +
-  facet_grid(day~substrate)
-
-delta_count_leg.plot = ggplot(data=delta_incorp.sum, aes(x=eco, y=count)) +
-  geom_bar(stat="identity", aes(fill=taxa, color=taxa)) +
-  scale_fill_manual(values=taxa.cols) +
-  scale_color_manual(values=taxa.cols) +
-  labs(color = "Order in Deltaproteobacteria", fill="Order in Deltaproteobacteria") +
-  theme_bw() +
-  guides(fill = guide_legend(ncol=2)) +
-  theme(legend.position = "right",
-        legend.title=element_text(size=12),
-        legend.text=element_text(size=10),
-        legend.title.align=0.5)
-delta.leg = g_legend(delta_count_leg.plot)
-
-# Add axis labels
-x.grob <- textGrob("Land-use", gp=gpar(fontface="bold", col="black", fontsize=14))
-y.grob <- textGrob("Incorporator OTU count", gp=gpar(fontface="bold", col="black", fontsize=14), rot=90)
-
-# Put all plots together
-delta_count.plot = cowplot::plot_grid(delta.leg, delta_POC_count.plot, ncol=1, rel_heights = c(0.3,1))
-delta_count.plot = cowplot::plot_grid(delta_DOC_count.plot, delta_count.plot, nrow=1, rel_widths = c(0.7,1))
-delta_count.plot = arrangeGrob(delta_count.plot, bottom = x.grob, left = y.grob)
-grid.arrange(delta_count.plot)
-
-```
-
-## Assembly of incorporators
-
-### Starting incorporator abundance in microcosms (Day 0)
-
-One idea of why an incorporator is labeled in a given land use would be that it has been selected for or is already present in high enough quantities. Granted I'm sure this is much more complicated than this, but I'm curious if the incorporators are in higher abundance in the land use in which they are labeled than in those in which they aren't.
-
-#### Reguardless of substrate or timepoint
-First I'll just run this analysis without reguard for substrate or timepoint. In other words, I just care if the OTU is labeled in a given land-use at least one day with one substrate.
-
-```{r}
-# Get the incorporators and the ecosystems they are labeled in
-incorp.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, ecosystem) %>%
-  unique %>%
-  mutate(status = ecosystem) %>%
-  tidyr::spread(key=ecosystem, value=status) %>%
-  tidyr::unite(col="lab_ecos", agriculture, meadow, forest, sep="-") %>%
-  mutate(lab_ecos = gsub("NA-", "", gsub("-NA", "", gsub("-NA-", "-", lab_ecos))),
-         n_ecos = nchar(lab_ecos) - nchar(gsub("-", "", lab_ecos)) + 1)
-
-# Get labeling status
-lab_status.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, ecosystem) %>%
-  unique %>%
-  mutate(status = "Labeled")
-  
-# Get metadata
-metadata = data.frame(sample_data(unfrac.rare.physeq))
-# Get the incorporator abundances
-day0_abd.df = data.frame(otu_table(transform_sample_counts(subset_samples(unfrac.rare.physeq, day == 0), function(x) x / sum(x)))) %>%
-  tibble::rownames_to_column(var="OTU") %>%
-  filter(OTU %in% incorp.df$OTU) %>%
-  tidyr::gather(key = "X.Sample", value="abundance", -OTU) %>%
-  mutate(X.Sample = gsub("12C.Con", "12C-Con", X.Sample)) %>%
-  left_join(metadata, by = "X.Sample") %>%
-  group_by(OTU, ecosystem) %>%
-  summarize(mean_abundance = mean(abundance)) %>%
-  as.data.frame %>%
-  group_by(OTU) %>%
-  mutate(max_abundance = max(mean_abundance)) %>%
-  ungroup %>%
-  filter(max_abundance >= 0.001) %>%
-  select(-max_abundance) %>%
-  tidyr::spread(key=ecosystem, value=mean_abundance) %>%
-  inner_join(incorp.df, by="OTU") %>%
-  tidyr::gather(key="ecosystem", value="mean_abundance", -OTU, -lab_ecos, -n_ecos) %>%
-  mutate(mean_abundance = ifelse(is.na(mean_abundance), 0, mean_abundance)) %>%
-  full_join(lab_status.df, by=c("OTU", "ecosystem")) %>%
-  mutate(status = ifelse(is.na(status), "Unlabeled", "Labeled"),
-         ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")),
-         lab_ecos = factor(lab_ecos, levels=c("agriculture", "meadow", "forest",
-                                              "agriculture-meadow", "agriculture-forest", "meadow-forest",
-                                              "agriculture-meadow-forest")),
-         OTU = factor(OTU),
-         eco = factor(ifelse(ecosystem == "agriculture", "A",
-                             ifelse(ecosystem == "meadow", "M",
-                                    ifelse(ecosystem == "forest", "F", NA))), 
-                      levels = c("A", "M", "F")))
-
-# Filter out OTUs that are below the detection threshold in all three land use strategies
-day0_detect.df = day0_abd.df %>%
-  select(OTU, lab_ecos, ecosystem, mean_abundance) %>%
-  tidyr::spread(key=ecosystem, value=mean_abundance) %>%
-  mutate(sum_abd = agriculture+meadow+forest) %>%
-  mutate(detect = ifelse(sum_abd > 0, "Detected", "Undetected")) %>%
-  select(OTU, lab_ecos, detect)
-
-day0_detect.lab = day0_detect.df %>%
-  group_by(lab_ecos) %>%
-  mutate(total_OTUs = n()) %>%
-  ungroup %>%
-  filter(detect == "Detected") %>%
-  group_by(lab_ecos, total_OTUs) %>%
-  summarize(det_OTUs = n()) %>%
-  as.data.frame %>%
-  #mutate(label = paste(lab_ecos, " (", paste(det_OTUs, total_OTUs, sep="/"), ")", sep="")) %>%
-  mutate(label = paste(lab_ecos, total_OTUs, "OTUs", sep=" ")) %>%
-  select(lab_ecos, label) %>%
-  arrange(lab_ecos)
-day0_detect.lab$label = factor(day0_detect.lab$label, 
-                               levels = unique(day0_detect.lab$label))
-
-day0_abd.df = filter(day0_abd.df, OTU %in% day0_detect.df[day0_detect.df$detect == "Detected",]$OTU) %>%
-  left_join(day0_detect.lab, by="lab_ecos")
-
-# Run the mixed effects model to compare abundance across land use
-lme_res.df = data.frame()
-for (labs in c("agriculture-meadow-forest", "agriculture-meadow", "agriculture-forest", 
-               "meadow-forest", "agriculture", "meadow", "forest")){
-  model = lme(mean_abundance ~ ecosystem, random = ~1|OTU,
-              data=filter(day0_abd.df, lab_ecos == labs), method="REML")
-  model.aov = anova(model)
-  posthoc.res = lsmeans(model, pairwise~ecosystem, adjust="bonferroni")
-  lme_res.df = rbind(lme_res.df, data.frame(posthoc.res$contrasts) %>%
-                       mutate(lab_ecos = labs, lme_p.value = model.aov$`p-value`[2]))
-}
-lme_res.df
-```
-
-
-```{r, fig.height=6.69291, fig.width=6.69291}
-# Get dataframe for significance bars
-lme_sig.df = lme_res.df %>%
-  filter(lme_p.value < 0.05) %>%
-  mutate(xmin = ifelse(grepl("agriculture", contrast), 1.05, 2.05),
-         xmax = ifelse(grepl("forest", contrast), 2.95, 1.95),
-         ymin = ifelse(grepl("agriculture", contrast) & grepl("forest", contrast), 0.067, 0.062),
-         ymax = ifelse(grepl("agriculture", contrast) & grepl("forest", contrast), 0.070, 0.065),
-         xtext = ifelse(grepl("agriculture", contrast),
-                        ifelse(grepl("meadow", contrast), 1.5, 2), 2.5),
-         ytext = ifelse(grepl("agriculture", contrast) & grepl("forest", contrast), 0.071, 0.066),
-         sig = ifelse(p.value < 0.001, "***",
-                      ifelse(p.value < 0.01, "**",
-                             ifelse(p.value < 0.05, "*", "NS"))),
-         lab_ecos = factor(lab_ecos, levels=c("agriculture", "meadow", "forest",
-                                              "agriculture-meadow", "agriculture-forest", "meadow-forest",
-                                              "agriculture-meadow-forest"))) %>%
-  left_join(day0_detect.lab, by="lab_ecos")
-
-# How many incorporators were above the detection threshold for each group?
-abv_det.df = day0_abd.df %>%
-  mutate(detect = ifelse(mean_abundance > 0, 1, 0)) %>%
-  group_by(label, ecosystem, status, eco) %>%
-  summarize(n_OTUs_det = sum(detect)) %>%
-  as.data.frame
-
-ggplot(data=day0_abd.df, aes(x=eco, y=mean_abundance)) +
-  geom_boxplot(aes(color=status), outlier.shape = 1) +
-  geom_segment(data=lme_sig.df[lme_sig.df$p.value < 0.05,], 
-               aes(x=xmin, xend=xmin, y=ymin, yend=ymax)) +
-  geom_segment(data=lme_sig.df[lme_sig.df$p.value < 0.05,], 
-               aes(x=xmin, xend=xmax, y=ymax, yend=ymax)) +
-  geom_segment(data=lme_sig.df[lme_sig.df$p.value < 0.05,], 
-               aes(x=xmax, xend=xmax, y=ymax, yend=ymin)) +
-  geom_text(data=lme_sig.df[lme_sig.df$p.value < 0.05,],
-            aes(label=sig, x=xtext, y=ytext), size=5) +
-  geom_text(data=abv_det.df, aes(label=n_OTUs_det, x=eco), y=0.08, size=3) +
-  ylim(c(0, 0.08)) +
-  labs(x="Land-use", y="Mean relative abundance on day 0 (%)", color="Labeling status") +
-  theme_bw() +
-  theme(legend.position = c(0.70, 0.15),
-        legend.title=element_text(size=14),
-        legend.text=element_text(size=12),
-        axis.title = element_text(size=14),
-        axis.text = element_text(size=12),
-        strip.text = element_text(size=10)) +
-  facet_wrap(~label)
-```
-
-```{r}
-length(unique(day0_abd.df$OTU))
-length(unique(lab_status.df$OTU))
-```
-
-#### Within substrate
-
-Now I want to see if we see the same trend for all substrates.
-
-```{r}
-# Get the incorporators and the ecosystems they are labeled in
-incorp.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, ecosystem, substrate) %>%
-  unique %>%
-  mutate(status = ecosystem) %>%
-  tidyr::spread(key=ecosystem, value=status) %>%
-  tidyr::unite(col="lab_ecos", agriculture, meadow, forest, sep="-") %>%
-  mutate(lab_ecos = gsub("NA-", "", gsub("-NA", "", gsub("-NA-", "-", lab_ecos))),
-         n_ecos = nchar(lab_ecos) - nchar(gsub("-", "", lab_ecos)) + 1)
-
-# Get labeling status
-lab_status.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, ecosystem, substrate) %>%
-  unique %>%
-  mutate(status = "Labeled")
-  
-# Get metadata
-metadata = data.frame(sample_data(unfrac.rare.physeq))
-# Get the incorporator abundances
-day0_abd.df = data.frame(otu_table(transform_sample_counts(subset_samples(unfrac.rare.physeq, day == 0), function(x) x / sum(x)))) %>%
-  tibble::rownames_to_column(var="OTU") %>%
-  filter(OTU %in% incorp.df$OTU) %>%
-  tidyr::gather(key = "X.Sample", value="abundance", -OTU) %>%
-  mutate(X.Sample = gsub("12C.Con", "12C-Con", X.Sample)) %>%
-  left_join(metadata, by = "X.Sample") %>%
-  group_by(OTU, ecosystem) %>%
-  summarize(mean_abundance = mean(abundance)) %>%
-  as.data.frame %>%
-  tidyr::spread(key=ecosystem, value=mean_abundance) %>%
-  full_join(incorp.df, by="OTU") %>%
-  tidyr::gather(key="ecosystem", value="mean_abundance", 
-                -OTU, -lab_ecos, -n_ecos, -substrate) %>%
-  mutate(mean_abundance = ifelse(is.na(mean_abundance), 0, mean_abundance)) %>%
-  full_join(lab_status.df, by=c("OTU", "ecosystem", "substrate")) %>%
-  mutate(status = ifelse(is.na(status), "Unlabeled", "Labeled"),
-         ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")),
-         lab_ecos = factor(lab_ecos, levels=c("agriculture", "meadow", "forest",
-                                              "agriculture-meadow", "agriculture-forest", "meadow-forest",
-                                              "agriculture-meadow-forest")),
-         OTU = factor(OTU),
-         eco = factor(ifelse(ecosystem == "agriculture", "A",
-                             ifelse(ecosystem == "meadow", "M",
-                                    ifelse(ecosystem == "forest", "F", NA))), 
-                      levels = c("A", "M", "F")),
-         substrate = factor(substrate, levels=c("13C-Xyl", "13C-Ami", "13C-Van", 
-                                                "13C-Cel", "13C-Pal")))
-
-# Filter out OTUs that are below the detection threshold in all three land use strategies
-day0_detect.df = day0_abd.df %>%
-  select(OTU, lab_ecos, ecosystem, substrate, mean_abundance) %>%
-  tidyr::spread(key=ecosystem, value=mean_abundance) %>%
-  mutate(sum_abd = agriculture+meadow+forest) %>%
-  mutate(detect = ifelse(sum_abd > 0, "Detected", "Undetected")) %>%
-  select(OTU, substrate, lab_ecos, detect)
-
-day0_detect.lab = day0_detect.df %>%
-  group_by(lab_ecos, substrate) %>%
-  mutate(total_OTUs = n()) %>%
-  ungroup %>%
-  filter(detect == "Detected") %>%
-  group_by(lab_ecos, substrate, total_OTUs) %>%
-  summarize(det_OTUs = n()) %>%
-  as.data.frame %>%
-  mutate(label = paste(lab_ecos, " (", 
-                       paste(det_OTUs, total_OTUs, sep="/"), 
-                       ")", sep="")) %>%
-  select(lab_ecos, substrate, label) %>%
-  arrange(lab_ecos)
-day0_detect.lab$label = factor(day0_detect.lab$label, 
-                               levels = unique(day0_detect.lab$label))
-
-day0_abd.df = inner_join(day0_abd.df, day0_detect.df[day0_detect.df$detect == "Detected",], 
-                         by=c("OTU", "lab_ecos", "substrate")) %>%
-  left_join(day0_detect.lab, by=c("lab_ecos", "substrate"))
-
-# Run the mixed effects model to compare abundance across land use
-lme_res.df = data.frame()
-for (sub in c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")){
-  for (labs in c("agriculture-meadow-forest", "agriculture-meadow", "agriculture-forest", 
-                 "meadow-forest", "agriculture", "meadow", "forest")){
-    model = lme(mean_abundance ~ ecosystem, random = ~1|OTU,
-                data=filter(day0_abd.df, lab_ecos == labs, substrate == sub),
-                method="REML")
-    model.aov = anova(model)
-    posthoc.res = lsmeans(model, pairwise~ecosystem, adjust="bonferroni")
-    lme_res.df = rbind(lme_res.df, data.frame(posthoc.res$contrasts) %>%
-                         mutate(lab_ecos = labs, substrate = sub,
-                                lme_p.value = model.aov$`p-value`[2]))
-  }
-}
-lme_res.df
-```
-
-```{r, fig.height=6.69291, fig.width=6.69291}
-# Get dataframe for significance bars
-lme_sig.df = lme_res.df %>%
-  filter(lme_p.value < 0.05) %>%
-  mutate(xmin = ifelse(grepl("agriculture", contrast), 1.05, 2.05),
-         xmax = ifelse(grepl("forest", contrast), 2.95, 1.95),
-         ymin = ifelse(grepl("agriculture", contrast) & grepl("forest", contrast), 0.067, 0.062),
-         ymax = ifelse(grepl("agriculture", contrast) & grepl("forest", contrast), 0.070, 0.065),
-         xtext = ifelse(grepl("agriculture", contrast),
-                        ifelse(grepl("meadow", contrast), 1.5, 2), 2.5),
-         ytext = ifelse(grepl("agriculture", contrast) & grepl("forest", contrast), 0.071, 0.066),
-         sig = ifelse(p.value < 0.001, "***",
-                      ifelse(p.value < 0.01, "**",
-                             ifelse(p.value < 0.05, "*", "NS"))),
-         lab_ecos = factor(lab_ecos, levels=c("agriculture", "meadow", "forest",
-                                              "agriculture-meadow", "agriculture-forest", "meadow-forest",
-                                              "agriculture-meadow-forest"))) %>%
-  left_join(day0_detect.lab, by=c("lab_ecos", "substrate"))
-
-# How many incorporators were above the detection threshold for each group?
-abv_det.df = day0_abd.df %>%
-  mutate(detect = ifelse(mean_abundance > 0, 1, 0)) %>%
-  group_by(label, ecosystem, substrate, status, eco) %>%
-  summarize(n_OTUs_det = sum(detect)) %>%
-  as.data.frame
-
-plot.list = list()
-for (sub in c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")){
-plot.list[[sub]] = ggplot(data=day0_abd.df[day0_abd.df$substrate == sub,], 
-                          aes(x=eco, y=mean_abundance)) +
-    geom_boxplot(aes(color=status), outlier.shape = 1) +
-    geom_segment(data=lme_sig.df[lme_sig.df$p.value < 0.05 & lme_sig.df$substrate == sub,], 
-                 aes(x=xmin, xend=xmin, y=ymin, yend=ymax)) +
-    geom_segment(data=lme_sig.df[lme_sig.df$p.value < 0.05 & lme_sig.df$substrate == sub,], 
-                 aes(x=xmin, xend=xmax, y=ymax, yend=ymax)) +
-    geom_segment(data=lme_sig.df[lme_sig.df$p.value < 0.05 & lme_sig.df$substrate == sub,], 
-                 aes(x=xmax, xend=xmax, y=ymax, yend=ymin)) +
-    geom_text(data=lme_sig.df[lme_sig.df$p.value < 0.05 & lme_sig.df$substrate == sub,],
-              aes(label=sig, x=xtext, y=ytext), size=5) +
-    geom_text(data=abv_det.df[abv_det.df$substrate == sub,], aes(label=n_OTUs_det, x=eco), y=0.08, size=3) +
-    ylim(c(0, 0.08)) +
-    labs(x="Land-use", y="Mean relative abundance on day 0 (%)", 
-         color="Labeling status", title=sub) +
-    theme_bw() +
-    theme(legend.position = c(0.70, 0.15),
-          legend.title=element_text(size=14),
-          legend.text=element_text(size=12),
-          axis.title = element_text(size=14),
-          axis.text = element_text(size=12),
-          strip.text = element_text(size=10)) +
-    facet_wrap(~label)
-}
-
-plot.list
-```
-
-
-#### Initial labeling
-
-Now I want to see if the starting abundance of an OTU correlates with the day in which it is first labeled. I expect early incorporators for each carbon source will have a higher starting abundance than those labeled later.
-
-```{r}
-# Get the incorporators and the ecosystems they are labeled in
-incorp.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  group_by(OTU, ecosystem, substrate) %>%
-  summarize(init_day = min(as.numeric(day))) %>%
-  as.data.frame
-
-# Get the initial incorporator abundances
-day0_abd.df = data.frame(otu_table(transform_sample_counts(subset_samples(unfrac.rare.physeq, day == 0), function(x) x / sum(x)))) %>%
-  tibble::rownames_to_column(var="OTU") %>%
-  filter(OTU %in% incorp.df$OTU) %>%
-  tidyr::gather(key = "X.Sample", value="abundance", -OTU) %>%
-  mutate(X.Sample = gsub("12C.Con", "12C-Con", X.Sample)) %>%
-  left_join(metadata, by = "X.Sample") %>%
-  group_by(OTU, ecosystem) %>%
-  summarize(mean_abundance = mean(abundance)) %>%
-  as.data.frame %>%
-  tidyr::spread(key=ecosystem, value=mean_abundance) %>%
-  full_join(unique(select(incorp.df, OTU)), by="OTU") %>%
-  tidyr::gather(key="ecosystem", value="mean_abundance", -OTU) %>%
-  mutate(mean_abundance = ifelse(is.na(mean_abundance), 0, mean_abundance)) %>%
-  inner_join(incorp.df, by = c("OTU", "ecosystem")) %>%
-  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")),
-         substrate = factor(substrate, levels=c("13C-Xyl", "13C-Ami", "13C-Van", 
-                                                "13C-Cel", "13C-Pal")))
-
-
-ggplot(data=day0_abd.df, aes(x=as.factor(init_day), y=log10(mean_abundance+ 0.001))) +
-  geom_boxplot() +
-  labs(x="Day of first labeling", y="Mean relative abundance on day 0 (%)") +
-  theme_bw() +
-  theme(legend.title=element_text(size=14),
-        legend.text=element_text(size=12),
-        axis.title = element_text(size=14),
-        axis.text = element_text(size=12),
-        strip.text = element_text(size=10)) +
-  facet_grid(ecosystem ~ substrate, scales="free_x")
-```
-
-
-
 ## Figure for ASM microbe
-```{r, fig.height=7, fig.width=7}
+```{r, fig.height=7, fig.width=7, message=FALSE, warning=FALSE}
 landuse.conv = data.frame(ecosystem = c("agriculture", "meadow", "forest"),
                           landuse = factor(c("Cropland", "Old-field", "Forest"), levels = c("Cropland", "Old-field", "Forest")))
 
@@ -1334,7 +667,7 @@ early.plot = ggplot(data=early.df, aes(x=substrate, y=taxa)) +
 
 ```
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 leg.plot1 = ggplot(data=early.df, aes(x=substrate, y=taxa)) +
   geom_tile(data=early.df, color="grey", aes(alpha=n_OTU, fill=landuse)) +
   scale_fill_manual(values = landuse.col) +
@@ -1409,7 +742,7 @@ leg.plot3 = g_legend(leg.plot3)
 
 ```
 
-```{r, fig.height=10, fig.width=7}
+```{r, fig.height=10, fig.width=7, message=FALSE, warning=FALSE}
 leg.plot = cowplot::plot_grid(leg.plot1, leg.plot2, leg.plot3, ncol=1, rel_heights = c(1,0.4, 0.4))
 early.full.plot = cowplot::plot_grid(early.plot + theme(legend.position = "none"), leg.plot, ncol=2,
                                      rel_widths = c(1,0.3))
@@ -1418,14 +751,14 @@ early_incorp_pub.plot = cowplot::plot_grid(venn_eco.plot, early.full.plot, ncol=
                                            labels=c("A", "B"))
 early_incorp_pub.plot
 
-ggsave(early_incorp_pub.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_3.tiff", 
-       device = "tiff", width = 7, height = 10, units = "in")
+#ggsave(early_incorp_pub.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_3.tiff", 
+#       device = "tiff", width = 7, height = 10, units = "in")
 ```
 
 
 Late responders
 
-```{r, fig.height=7, fig.width=7}
+```{r, fig.height=7, fig.width=7, message=FALSE, warning=FALSE}
 landuse.conv = data.frame(ecosystem = c("agriculture", "meadow", "forest"),
                           landuse = factor(c("Cropland", "Old-field", "Forest"), levels = c("Cropland", "Old-field", "Forest")))
 
@@ -1525,7 +858,7 @@ late.plot = ggplot(data=late.df, aes(x=substrate, y=taxa)) +
 
 ```
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 leg.plot1 = ggplot(data=late.df, aes(x=substrate, y=taxa)) +
   geom_tile(data=late.df, color="grey", aes(alpha=n_OTU, fill=landuse)) +
   scale_fill_manual(values = landuse.col) +
@@ -1600,21 +933,19 @@ leg.plot3 = g_legend(leg.plot3)
 
 ```
 
-```{r, fig.height=7, fig.width=7}
-late.plot
-
+```{r, fig.height=7, fig.width=7, message=FALSE, warning=FALSE}
 leg.plot = cowplot::plot_grid(leg.plot1, leg.plot2, leg.plot3, ncol=1, rel_heights = c(1,0.4, 0.4))
 late_incorp_pub.plot = cowplot::plot_grid(late.plot + theme(legend.position = "none"), leg.plot, ncol=2,
                                           rel_widths = c(1,0.3))
 late_incorp_pub.plot
 
-ggsave(late_incorp_pub.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_9.tiff", 
-       device = "tiff", width = 7, height = 7, units = "in")
+#ggsave(late_incorp_pub.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_9.tiff", 
+#       device = "tiff", width = 7, height = 7, units = "in")
 ```
 
 
 ## Figure for Pub
-```{r, fig.height=4, fig.width=3.46457}
+```{r, fig.height=4, fig.width=3.46457, message=FALSE, warning=FALSE}
 landuse.conv = data.frame(ecosystem = c("agriculture", "meadow", "forest"),
                           landuse = factor(c("Cropland", "Old-field", "Forest"), levels = c("Cropland", "Old-field", "Forest")))
 
@@ -1746,7 +1077,7 @@ early.plot
 
 ```
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 leg.plot1 = ggplot(data=early.df, aes(x=substrate, y=taxa)) +
   #geom_tile(data=early.df, color="grey", aes(alpha=n_OTU, fill=landuse)) +
   geom_tile(data=early.df, color="grey", aes(fill=landuse)) +
@@ -1827,7 +1158,7 @@ leg.plot2 = g_legend(leg.plot2)
 leg.plot3 = g_legend(leg.plot3)
 ```
 
-```{r, fig.height=1, fig.width=0.5}
+```{r, fig.height=1, fig.width=0.5, message=FALSE, warning=FALSE}
 tile_leg.df = data.frame(landuse = factor(c("Cropland", "Cropland", "Cropland", "Cropland", "Cropland",
                                             "Old-field", "Old-field", "Old-field", "Old-field", "Old-field",
                                             "Forest", "Forest", "Forest", "Forest", "Forest"),
@@ -1855,11 +1186,10 @@ leg.plot4 = ggplot(data=tile_leg.df, aes(x=landuse, y=alpha_labs)) +
         axis.title = element_blank(),
         legend.position = "none",
         plot.title = element_text(size=7, hjust=0.5))
-leg.plot4
 ```
 
 
-```{r, fig.height=5, fig.width=3.46457}
+```{r, fig.height=5, fig.width=3.46457, message=FALSE, warning=FALSE}
 venn_eco.plot = plot(euler(venn_eco.df, by = list(test)), 
                      legend = FALSE, labels = FALSE,
                      #legend = list(labels = c("Cropland", "Old-field", "Forest"), fontsize=5),
@@ -1880,8 +1210,8 @@ early_incorp_leg_pub.plot = cowplot::plot_grid(early_incorp_pub.plot, leg.plot, 
 
 early_incorp_leg_pub.plot
 
-ggsave(early_incorp_leg_pub.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig4.tiff", 
-       device = "tiff", width = 3.46457, height = 5, units = "in")
+#ggsave(early_incorp_leg_pub.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig4.tiff", 
+#       device = "tiff", width = 3.46457, height = 5, units = "in")
 ```
 
 

@@ -15,7 +15,7 @@ In addition to all our SIP fraction sequences, we sequenced the unfractionated s
 This analysis allows us to see what the microbial communities within the microcosms look like over time and compare between land-use regimes. Note that since we are not fractionated the samples, we should see no effect of substrate. Remember that all microcosms were essentially treated the same in this case where the only difference is which substrates had 13C label. All except for the H2O-Control samples of course.
 
 #### Initialization
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # For data handling
 library(dplyr)
 library(phyloseq)
@@ -44,7 +44,7 @@ g_legend<-function(a.gplot){
 
 All unfractionated sequencing data is found in the master phyloseq object and labeled as "Unfractionated".
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Import phyloseq object
 physeq = readRDS("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_backups_8_8_19/phyloseq/fullcyc2physeq.RDS")
 
@@ -84,14 +84,13 @@ unfrac.physeq
 
 For many of the following analyses I want a rarefied OTU table. This is one way to correct for differing sequencing depths across all my samples. I will set the seed for this process so that I can replicate this analysis if necessary (seed = 4242).
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 unfrac.rare.physeq = rarefy_even_depth(unfrac.physeq, rngseed=4242)
 unfrac.rare.physeq
 ```
 
 
-```{r}
-
+```{r, message=FALSE, warning=FALSE}
 rarecurve.df = data.frame()
 for (rare_step in seq(1, max(sample_sums(unfrac.physeq)), by = 1000)){
   unfrac.steprare.physeq = rarefy_even_depth(unfrac.physeq, sample.size=rare_step, rngseed=4242)
@@ -110,7 +109,7 @@ ggplot(data=rarecurve.df, aes(x=n_reads, y=n_OTUs, group=microcosm)) +
 
 Some basic stats
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 print(paste("Maximum read count =", max(colSums(otu_table(unfrac.physeq)))))
 print(paste("Minimum read count =", min(colSums(otu_table(unfrac.physeq)))))
 print(paste("Rarefied read count =", unique(colSums(otu_table(unfrac.rare.physeq)))))
@@ -132,7 +131,7 @@ First I'll look at the alpha diversity of our samples. Specifically I'll look at
 
 Here I'll calculate the desired alpha diveristy measures.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 OTU.table = t(otu_table(unfrac.rare.physeq))
 alpha_div.df = data.frame(X.Sample = rownames(OTU.table), 
                           richness = specnumber(OTU.table),
@@ -149,7 +148,7 @@ alpha_div.df = data.frame(X.Sample = rownames(OTU.table),
 
 Now I'll compare these four alpha diversity metrics between the three land use regimes over the course of the experiment. I'll remove the H2O-Control sample from this experiment however. Note that I am not using a repeated measures here (mixed effect), because each timepoint is a separate microcosms therefore not a repeated measures.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Remove H2O-Con samples and set day to be a factor
 alpha_div_noH2O.df = alpha_div.df %>%
   filter(substrate != "H2O-Con") %>%
@@ -224,7 +223,7 @@ anova(evenness.lm)
 
 Plot these results
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 
 alpha_means.df = rbind(richness_means.df, shannon_means.df, simpson_means.df, evenness_means.df) %>%
   mutate(diversity = factor(diversity, levels = c("richness", "shannon", "simpson", "evenness")))
@@ -275,8 +274,8 @@ alpha_pairwise.plot = ggplot(data = filter(alpha_means.df, diversity != "simpson
 
 alpha_pairwise.plot
 
-ggsave(alpha_pairwise.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_5.tiff", 
-       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
+#ggsave(alpha_pairwise.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_5.tiff", 
+#       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
 
 ```
 
@@ -284,7 +283,7 @@ ggsave(alpha_pairwise.plot, filename = "/Users/sambarnett/Documents/Dissertation
 
 Now I want to see how much the alpha diversity diverges from its starting point before substrate addition. For this analysis I'll be comparing each diversity metric from each day to the baseline of the average diversity on day 0. I will do this separately for each land use regime. I will also see if the H2O-Control sample from day 30 differs much from this timepoint 0.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get day 0 measure
 alpha_div_post.df = alpha_div.df %>%
   tidyr::gather(key="diversity", value="measure", -X.Sample, -ecosystem, -substrate, -day, -microcosm_replicate, -DNA_conc__ng_ul) %>%
@@ -333,7 +332,7 @@ alpha_ttest.df
 
 Now I'll plot the results.
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 alpha_ttest.LU.df = left_join(alpha_ttest.df, 
                            data.frame(ecosystem = c("agriculture", "meadow", "forest"),
                                       landuse = factor(c("Cropland", "Old-field", "Forest"), 
@@ -365,8 +364,8 @@ alpha_to0.plot = ggplot(data=filter(alpha_ttest.LU.df, diversity != "simpson"), 
 
 alpha_to0.plot
 
-ggsave(alpha_to0.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_6.tiff", 
-       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
+#ggsave(alpha_to0.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_6.tiff", 
+#       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
 
 ```
 
@@ -382,7 +381,7 @@ So we saw that alpha diversity varies across land-use and time. Now I want to se
 
 The first thing I need to do is measure the distance or dissimilarity between all microcosm communities. I will use three metrics for this: Bray-Curtis dissimilarity, unweighted UniFrac distance, and weighted UniFrac.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 unfrac_BC.dist = vegdist(t(otu_table(unfrac.rare.physeq)), method="bray", binary=FALSE, diag=TRUE, upper=TRUE)
 unfrac_uwUF.dist = distance(unfrac.rare.physeq, method="unifrac")
 unfrac_wUF.dist = distance(unfrac.rare.physeq, method="wunifrac")
@@ -392,7 +391,7 @@ unfrac_wUF.dist = distance(unfrac.rare.physeq, method="wunifrac")
 
 Now I'll make ordinations based on the distance measures and look for a pattern. For this I'll use NMDS to be consistent across all metrics.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Run the NMDS ordinations
 set.seed(4242)
 unfrac_BC.ord = metaMDS(unfrac_BC.dist, trymax = 1000)
@@ -422,7 +421,7 @@ unfrac_wUF.ord.df = data.frame(unfrac_wUF.ord$points) %>%
 
 Now I'll plot. I want to add in arrows showing the direction of community shift over time. These arrows will be based on the centroid of the points for a given day and land use. I also want to show how these communities all relate to the H2O-control so I'll add those points in as blue colored points.
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Get centroids for plotting the paths
 unfrac_meta.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon")) %>%
@@ -471,7 +470,7 @@ unfrac_BC.ord.plot
 
 ```
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Get centroids for plotting the paths
 unfrac_meta.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon")) %>%
@@ -519,7 +518,7 @@ unfrac_uwUF.ord.plot = ggplot(data=unfrac_uwUF.ord.df, aes(x=MDS1, y=MDS2)) +
 unfrac_uwUF.ord.plot
 ```
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Get centroids for plotting the paths
 unfrac_meta.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon")) %>%
@@ -567,7 +566,7 @@ unfrac_wUF.ord.plot
 ```
 
 Plot all together
-```{r, fig.height=7, fig.width=7}
+```{r, fig.height=7, fig.width=7, message=FALSE, warning=FALSE}
 
 unfrac.ord.leg = g_legend(unfrac_BC.ord.plot + theme(legend.title=element_text(size=14),
                                                      legend.text=element_text(size=12),
@@ -580,13 +579,13 @@ beta_ords.plot = cowplot::plot_grid(unfrac_BC.ord.plot + theme(legend.position =
                                     unfrac.ord.leg, nrow=2, labels = c("A", "B", "C", ""))
 beta_ords.plot
 
-ggsave(beta_ords.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_2.tiff", 
-       device = "tiff", width = 7, height = 7, units = "in")
+#ggsave(beta_ords.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_2.tiff", 
+#       device = "tiff", width = 7, height = 7, units = "in")
 ```
 
-### Plot4publication
+### Plot for publication
 
-```{r, fig.height=2.296587, fig.width=2.296587}
+```{r, fig.height=2.296587, fig.width=2.296587, message=FALSE, warning=FALSE}
 # Get centroids for plotting the paths
 unfrac_meta.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon")) %>%
@@ -641,7 +640,7 @@ unfrac_BC.ord.plot +
 
 ```
 
-```{r, fig.height=2.296587, fig.width=2.296587}
+```{r, fig.height=2.296587, fig.width=2.296587, message=FALSE, warning=FALSE}
 # Get centroids for plotting the paths
 unfrac_meta.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon")) %>%
@@ -696,7 +695,7 @@ unfrac_uwUF.ord.plot +
 ```
 
 
-```{r, fig.height=2.296587, fig.width=2.296587}
+```{r, fig.height=2.296587, fig.width=2.296587, message=FALSE, warning=FALSE}
 # Get centroids for plotting the paths
 unfrac_meta.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon")) %>%
@@ -750,7 +749,7 @@ unfrac_wUF.ord.plot +
 ```
 
 Plot all together
-```{r, fig.height=3, fig.width=7.08661}
+```{r, fig.height=3, fig.width=7.08661, message=FALSE, warning=FALSE}
 library(grid)
 library(gridExtra)
 
@@ -779,7 +778,7 @@ beta_ords_leg.plot
 
 
 ### PERMANOVA
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get metadata without H2O-Con samples
 meta_noH2O.df = data.frame(sample_data(unfrac.rare.physeq)) %>%
   select(X.Sample, ecosystem, substrate, day) %>%
@@ -817,7 +816,7 @@ To examine resistance an resilience, I will compare the dissimilairty/distance i
 
 I will run this analysis using Bray-Curtis, unweighted UniFrac, and UniFrac. First I need to collect all paired distances of interest.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get paired samples
 unfrac_metadata.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon"),
@@ -921,7 +920,7 @@ unfrac_daypaired.dist.sum = unfrac_daypaired.dist.df %>%
 
 Now I an compare the distances between each day and day 0 to the intra-day 0 distance. I'll use a single sample t-test and adjust the p-value for multiple comparisons.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Run analysis separately for each beta-diversity metric
 daypair_ttest.df = data.frame()
 for (metric in c("Bray-Curtis", "Unweighted UniFrac", "Weighted UniFrac")){
@@ -964,7 +963,7 @@ daypair_ttest.df
 
 Now I'll plot the results.
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 daypair_ttest.LU.df = left_join(daypair_ttest.df, 
                                 data.frame(ecosystem = c("agriculture", "meadow", "forest"),
                                            landuse = factor(c("Cropland", "Old-field", "Forest"), 
@@ -998,8 +997,8 @@ beta_to0.plot = ggplot(data=daypair_ttest.LU.df, aes(x=day, y=mean)) +
 beta_to0.plot
 
 
-ggsave(beta_to0.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_7.tiff", 
-       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
+#ggsave(beta_to0.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_7.tiff", 
+#       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
 ```
 
 ## Convergence/Divergence
@@ -1010,7 +1009,7 @@ For this analysis, I'll measure the dissimilarity/distance between microcosms fr
 
 Again, I will run this analysis using Bray-Curtis, unweighted UniFrac, and UniFrac. First I need to collect all paired distances of interest.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get paired samples
 unfrac_metadata.df = data.frame(sample_data(unfrac.physeq)) %>%
   mutate(treatment = ifelse(substrate == "H2O-Con", "Water", "Carbon"),
@@ -1073,7 +1072,7 @@ unfrac_ecopaired.dist.sum = unfrac_ecopaired.dist.df %>%
 
 Now I an compare the distances between land use regimes on each day to their day 0 distance. I'll use a two sample t-test and adjust the p-value for multiple comparisons.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Run analysis separately for each beta-diversity metric
 ecopair_ttest.df = data.frame()
 eco_pair = NULL
@@ -1124,7 +1123,7 @@ ecopair_ttest.df
 
 Now I'll plot the results.
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 
 ggplot(data=ecopair_ttest.df, aes(x=day, y=mean)) +
   #geom_hline(data=unique(select(ecopair_ttest.df, eco_pair, measure, mean_day0)),
@@ -1156,7 +1155,7 @@ ggplot(data=ecopair_ttest.df, aes(x=day, y=mean)) +
 
 We see that across the board, agriculture seems to show the greatest shift in diversity after substrate addition. Now I want to see if we can visualize this change with regards to the taxonomy and abundance of the OTUs. So, here I want to make a figure showing the abundance of various taxa across each land use regime over time.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get OTU relative abundances
 OTU_table.df = data.frame(otu_table(unfrac.rare.physeq)) %>%
   tibble::rownames_to_column(var="OTU") %>%
@@ -1199,9 +1198,9 @@ OTU_table.taxa.meta.df$X.Sample = factor(OTU_table.taxa.meta.df$X.Sample, levels
 
 ```
 
-Now I'll plot these abundances.
+Now I'll plot these abundances for my dissertation.
 
-```{r, fig.height=4.72441, fig.width=6.69291}
+```{r, fig.height=4.72441, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Set colors for the taxa
 source("/Users/sambarnett/Documents/Misc_code/paul_tol_colors.R")
 taxa = unique(OTU_table.taxa.meta.df[OTU_table.taxa.meta.df$taxa != "Less than 1%",]$taxa)
@@ -1264,11 +1263,13 @@ taxa_abund.plot = ggplot(data=OTU_table.taxa.meta.sum, aes(x=position, y=taxa_ab
 
 taxa_abund.plot
 
-ggsave(taxa_abund.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_14.tiff", 
-       device = "tiff", width = 6.69291, height = 4.72441, units = "in")
+#ggsave(taxa_abund.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_14.tiff", 
+#       device = "tiff", width = 6.69291, height = 4.72441, units = "in")
 ```
 
-```{r, fig.height=4, fig.width=7.08661}
+Now plot for publication.
+
+```{r, fig.height=4, fig.width=7.08661, message=FALSE, warning=FALSE}
 # Set colors for the taxa
 source("/Users/sambarnett/Documents/Misc_code/paul_tol_colors.R")
 taxa = unique(OTU_table.taxa.meta.df[OTU_table.taxa.meta.df$taxa != "Less than 1%",]$taxa)
@@ -1330,21 +1331,20 @@ taxa_abund.plot = ggplot(data=OTU_table.taxa.meta.sum, aes(x=position, y=taxa_ab
         strip.text = element_text(size=6)) +
   facet_wrap(~landuse)
 
-taxa_abund.plot
 ```
 
-```{r, fig.height=7.08661, fig.width=7.08661}
+```{r, fig.height=7.08661, fig.width=7.08661, message=FALSE, warning=FALSE}
 
 beta_ords_taxa_abund.plot = cowplot::plot_grid(beta_ords_leg.plot, taxa_abund.plot, nrow=2, rel_heights = c(0.7, 1), labels = c("", "d"), label_size = 10)
 beta_ords_taxa_abund.plot
 
-ggsave(beta_ords_taxa_abund.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig2.tiff", 
-       device = "tiff", width = 7.08661, height = 7.08661, units = "in")
+#ggsave(beta_ords_taxa_abund.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig2.tiff", 
+#       device = "tiff", width = 7.08661, height = 7.08661, units = "in")
 ```
 
 Lets plot the change in abundance of the top5 most abundant OTUs in each land use
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 library(grid)
 library(gridExtra)
 
@@ -1449,14 +1449,14 @@ top5OTU_abund.plot = arrangeGrob(top5.plot, left = y.grob, bottom = x.grob)
 
 grid.arrange(top5OTU_abund.plot)
 
-ggsave(top5OTU_abund.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_15.tiff", 
-       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
+#ggsave(top5OTU_abund.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_15.tiff", 
+#       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
 
 ```
 
 
 ## DNA concentration
-```{r, fig.height=3.34646, fig.width=5}
+```{r, fig.height=3.34646, fig.width=5, message=FALSE, warning=FALSE}
 landuse.conv = data.frame(ecosystem = c("agriculture", "meadow", "forest"),
                           habitat = c("A", "M", "F"),
                           landuse = factor(c("Cropland", "Old-field", "Forest"), levels = c("Cropland", "Old-field", "Forest")))
@@ -1524,44 +1524,6 @@ ggplot(data=DNA_conc.sum, aes(x=day, y=mean_DNA_pG_soil, color=landuse)) +
         axis.title = element_text(size=12),
         axis.text = element_text(size=12))
 ```
-
-```{r, fig.height=3.34646, fig.width=3.34646}
-
-DNA_slim.df = select(DNA_conc.df, X.Sample, DNA_pG_soil)
-
-gamma_abd.df = filter(OTU_table.taxa.meta.sum, taxa == "Gammaproteobacteria") %>%
-  full_join(DNA_slim.df, by="X.Sample") %>%
-  mutate(taxa_DNA = (taxa_abd/100)*DNA_pG_soil) %>%
-  filter(!(is.na(DNA_pG_soil))) %>%
-  group_by(day_factor, ecosystem, taxa) %>%
-  summarize(mean_abd = mean(taxa_DNA),
-            sd_abd = sd(taxa_DNA),
-            n_sam = n()) %>%
-  as.data.frame %>%
-  arrange(ecosystem, day_factor) %>%
-  mutate(SE_abd = mean_abd/sqrt(n_sam),
-         day = as.numeric(as.character(day_factor)))
-gamma_abd.df
-
-ggplot(data=gamma_abd.df, aes(x=day, y=mean_abd, color=ecosystem)) +
-  geom_line(data=gamma_abd.df[gamma_abd.df$day_factor != "H2O-Con",]) +
-  geom_errorbar(data=gamma_abd.df[gamma_abd.df$day_factor != "H2O-Con",],
-                aes(ymin = mean_abd-SE_abd, ymax = mean_abd+SE_abd)) +
-  geom_point(data=gamma_abd.df[gamma_abd.df$day_factor != "H2O-Con",], size=3, shape=16) +
-  geom_errorbar(data=gamma_abd.df[gamma_abd.df$day_factor == "H2O-Con",],
-                aes(x=30, ymin = mean_abd-SE_abd, ymax = mean_abd+SE_abd)) +
-  geom_point(data=gamma_abd.df[gamma_abd.df$day_factor == "H2O-Con",], aes(x=30), size=3, shape=1) +
-  labs(x="Time since substrate addition (days)", y="Estimated DNA mass (ng/g soil)",
-       color="Land-use") +
-  scale_color_manual(values = eco.col) +
-  theme_bw() +
-  theme(legend.position = c(0.75, 0.78),
-        legend.title=element_text(size=12),
-        legend.text=element_text(size=12),
-        axis.title = element_text(size=12),
-        axis.text = element_text(size=12))
-```
-
 
 ## Session info
 

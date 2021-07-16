@@ -1,5 +1,5 @@
 ---
-title: "Enrichments"
+title: "Analyses on Enrichment Microcosms"
 author: "Samuel Barnett"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -10,7 +10,7 @@ output:
 
 ## Introduction
 
-In addition to SIP based enrichments, we also ran a simple enrichment adding one 12C substrate to smaller microcoms containing ~ 5g soil. Unlike the SIP experiment, only one substrate was added to each microcosm and this time we used soil from all 10 locations, not just Monkey Run. Also we only sampled microcoms on two days for each substrate:
+In addition to SIP, we also ran a simple enrichment experiment, adding one 12C substrate to smaller microcoms containing ~ 5g soil. Unlike the SIP experiment, only one substrate was added to each microcosm and this time we used soil from all 10 locations, not just Monkey Run. Also we only sampled microcoms on two days for each substrate:
 
 * Days 2 and 4: xylose, amino acids, and vanillin
 * Days 14 and 28: cellulose and palmitic acid
@@ -20,7 +20,7 @@ We also had water treated controls for each timepoint as something to compare ag
 In this notebook I will examine these samples both on their own and in relation to the incorporators identified in the MW-HR-SIP analysis.
 
 #### Initialization
-```{r}
+```{r, results = FALSE, message=FALSE, warning=FALSE}
 # For data handling
 library(dplyr)
 library(phyloseq)
@@ -47,7 +47,7 @@ g_legend<-function(a.gplot){
 
 The OTU abundances and phylogeny can be found in the master phyloseq object.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Import phyloseq object
 physeq = readRDS("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_backups_8_8_19/phyloseq/fullcyc2physeq.RDS")
 
@@ -72,7 +72,7 @@ bulk.physeq = prune_taxa(taxa_sums(bulk.physeq) > 0, bulk.physeq)
 ```
 
 Incorporator status can be found in the log2 fold change dataframe.
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get the l2fc dataframe and add in columns indicating the land-use, labeled substrate, and day
 l2fc.df = readRDS(file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_l2fc_testoutput.rds") %>%
   mutate(ecosystem  = factor(gsub(".+ecosystem == [ \']*([A-z]+).+", "\\1", .id),
@@ -85,7 +85,7 @@ l2fc.df = readRDS(file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullc
 
 For many of the following analyses I want a rarefied OTU table. This is one way to correct for differing sequencing depths across all my samples. I will set the seed for this process so that I can replicate this analysis if necessary (seed = 4242).
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 enr.rare.physeq = rarefy_even_depth(enr.physeq, rngseed=4242)
 bulk.rare.physeq = rarefy_even_depth(bulk.physeq, rngseed=4242)
 
@@ -94,7 +94,7 @@ unique(colSums(otu_table(enr.rare.physeq)))
 
 ## Basic stats
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 print(paste("Maximum read count =", max(colSums(otu_table(enr.physeq)))))
 print(paste("Minimum read count =", min(colSums(otu_table(enr.physeq)))))
 print(paste("Rarefied read count =", unique(colSums(otu_table(enr.rare.physeq)))))
@@ -114,7 +114,7 @@ As with the SIP enrichments I want to see if there carbon addition leads to a sh
 
 Here I'll calculate the desired alpha diveristy measures.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 OTU.table = t(otu_table(enr.rare.physeq))
 alpha_div.df = data.frame(X.Sample = rownames(OTU.table), 
                           richness = specnumber(OTU.table),
@@ -144,8 +144,9 @@ alpha_div_treat.df = alpha_div.df %>%
 ```
 
 ### Early timepoints
+Early timepoints are the first timepoint for each of the substrates (Day 2 for Xylose, amino acids, and vanillin; Day 14 for palmitic acid and cellulose). This is similar to the early timepoints for SIP and likely captures bacterial growth due to substrate addition more so than secondary feeding.
 
-```{r, fig.height=6, fig.width=7}
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
 ## Get bulk
 bulk_meta.df = data.frame(sample_data(bulk.rare.physeq)) %>%
   select(location, ecosystem, pH, organic_content_perc, DNA_conc__ng_ul) %>%
@@ -193,7 +194,6 @@ early_evenness_wilcox.plot = ggplot(data=evenness_early_meta.df, aes(x=substrate
 
 
 ## Compare with organic content
-
 early_SOM_evenness.df = data.frame()
 for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
   sub.evenness.df = filter(evenness_early_meta.df, substrate==sub)
@@ -276,8 +276,9 @@ early_DNA_evenness.df
 ```
 
 ### Late timepoints
+Late timepoints are the second timepoint for each of the substrates (Day 4 for Xylose, amino acids, and vanillin; Day 28 for palmitic acid and cellulose). This is similar to the late timepoints for SIP and likely captures bacterial growth due more to secondary feeding and late feeding on substrates.
 
-```{r, fig.height=6, fig.width=7}
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
 ## Get bulk
 bulk_meta.df = data.frame(sample_data(bulk.rare.physeq)) %>%
   select(location, ecosystem, pH, organic_content_perc, DNA_conc__ng_ul) %>%
@@ -412,7 +413,7 @@ Since these are enrichments we cannot identify specific OTUs that have taken up 
 
 The first thing I need to do is measure the distance or dissimilarity between all microcosm communities. I will use three metrics for this: Bray-Curtis dissimilarity, unweighted UniFrac distance, and weighted UniFrac.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 enr_BC.dist = vegdist(t(otu_table(enr.rare.physeq)), method="bray", binary=FALSE, diag=TRUE, upper=TRUE)
 enr_uwUF.dist = distance(enr.rare.physeq, method="unifrac")
 enr_wUF.dist = distance(enr.rare.physeq, method="wunifrac")
@@ -420,7 +421,7 @@ enr_wUF.dist = distance(enr.rare.physeq, method="wunifrac")
 
 ### PERMANOVA
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 print("Bray-Curtis dissimilarity")
 enr_BC.adonis = adonis(formula = enr_BC.dist ~ ecosystem * substrate * day, data = as(sample_data(enr.rare.physeq), "data.frame"))
 enr_BC.adonis
@@ -442,7 +443,7 @@ print("-----")
 
 Substrate significantly explains varaition in community composition as does ecosystem. Now I want to see if the differences between water controls and treatments correlate with either SOM or [DNA].
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 bulk_meta.df = data.frame(sample_data(bulk.rare.physeq)) %>%
   select(location, ecosystem, pH, organic_content_perc, DNA_conc__ng_ul) %>%
   mutate(DNA_conc__ng_ul = as.numeric(as.character(DNA_conc__ng_ul)))
@@ -492,7 +493,7 @@ enr_dist.df = full_join(enr_BC.dist.df, enr_uwUF.dist.df, by = c("Treatment", "C
 
 #### Early timepoints
 
-```{r, fig.height=7, fig.width=5}
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
 ## Filter to just early timepoints
 early_enr_dist.df = enr_dist.df %>%
   filter(time_point == "Early") %>%
@@ -580,7 +581,7 @@ early_DNA_wUF.df
 
 #### Late timepoints
 
-```{r, fig.height=7, fig.width=5}
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
 ## Filter to just late timepoints
 late_enr_dist.df = enr_dist.df %>%
   filter(time_point == "Late") %>%
@@ -667,8 +668,10 @@ late_DNA_wUF.df
 
 ## Diversity plots for publication
 
+These will be the plots from the analyses above that are used in the publication of this study (and my PhD dissertation).
+
 ### Early timepoints
-```{r, fig.height=6, fig.width=7}
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
 early_landuse.leg = g_legend(early_evenness_SOM.plot + theme(legend.direction = "vertical", 
                                                              legend.box.background = element_rect(colour = "black")))
 
@@ -680,15 +683,15 @@ early_DNAyield.plot = cowplot::plot_grid(early_evenness_wilcox.plot + theme(lege
 
 early_DNAyield.plot
 
-ggsave(early_DNAyield.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_5.tiff", 
-       device = "tiff", width = 7, height = 6, units = "in")
+#ggsave(early_DNAyield.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_5.tiff", 
+#       device = "tiff", width = 7, height = 6, units = "in")
 
 
 ```
 
 For publication
 
-```{r, fig.height=7.08661, fig.width=3.46457}
+```{r, fig.height=7.08661, fig.width=3.46457, message=FALSE, warning=FALSE}
 carbon.conv = data.frame(substrate = c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal"),
                          carbon = factor(c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid"),
                                          levels=c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid")))
@@ -771,14 +774,14 @@ pub_early_DNAyield.plot = cowplot::plot_grid(pub_early_evenness_wilcox_leg.plot,
 
 pub_early_DNAyield.plot
 
-ggsave(pub_early_DNAyield.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig3.tiff", 
-       device = "tiff", width = 3.46457, height = 7.08661, units = "in")
+#ggsave(pub_early_DNAyield.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig3.tiff", 
+#       device = "tiff", width = 3.46457, height = 7.08661, units = "in")
 
 
 ```
 
 
-```{r, fig.height=7, fig.width=5}
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
 
 early_landuse.leg = g_legend(early_wUF_SOM.plot + theme(legend.direction = "horizontal", 
                                                         legend.position = "top",
@@ -790,14 +793,14 @@ early_SOM.plot = cowplot::plot_grid(early_landuse.leg,
 
 early_SOM.plot
 
-ggsave(early_SOM.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_11.tiff", 
-       device = "tiff", width = 5, height = 7, units = "in")
+#ggsave(early_SOM.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_11.tiff", 
+#       device = "tiff", width = 5, height = 7, units = "in")
 
 ```
 
 ### Late timepoints 
 
-```{r, fig.height=6, fig.width=7}
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
 late_landuse.leg = g_legend(late_evenness_SOM.plot + theme(legend.direction = "vertical", 
                                                            legend.box.background = element_rect(colour = "black")))
 
@@ -809,13 +812,13 @@ late_DNAyield.plot = cowplot::plot_grid(late_evenness_wilcox.plot + theme(legend
 
 late_DNAyield.plot
 
-ggsave(late_DNAyield.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_12.tiff", 
-       device = "tiff", width = 7, height = 6, units = "in")
+#ggsave(late_DNAyield.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_12.tiff", 
+#       device = "tiff", width = 7, height = 6, units = "in")
 
 
 ```
 
-```{r, fig.height=7, fig.width=5}
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
 
 late_landuse.leg = g_legend(late_wUF_SOM.plot + theme(legend.direction = "horizontal", 
                                                       legend.position = "top",
@@ -827,17 +830,19 @@ late_SOM.plot = cowplot::plot_grid(late_landuse.leg,
 
 late_SOM.plot
 
-ggsave(late_SOM.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_13.tiff", 
-       device = "tiff", width = 5, height = 7, units = "in")
+#ggsave(late_SOM.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_13.tiff", 
+#       device = "tiff", width = 5, height = 7, units = "in")
 
 ```
 
 
 ## DESeq2 significant enrichments
-Now I want to see if I can identify any OTUs that are significantly enriched in the treated samples compared to the control samples.
 
-```{r}
+Now I want to see if I can identify any OTUs that are significantly enriched in the substrate treated samples compared to the control samples.
+
+```{r, results = FALSE, message=FALSE, warning=FALSE}
 library(DESeq2)
+library(knitr)
 
 enr.deseq.df = data.frame()
 for (eco in c("agriculture", "meadow", "forest")){
@@ -869,23 +874,19 @@ for (eco in c("agriculture", "meadow", "forest")){
   }
 }
 
-write.table(enr.deseq.df, file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/enrichment_DESeq2_l2fc.txt", sep="\t", quote=FALSE, row.names = FALSE)
+#write.table(enr.deseq.df, file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/enrichment_DESeq2_l2fc.txt", sep="\t", quote=FALSE, row.names = FALSE)
 
-enr.deseq.df %>% 
-  filter(padj < 0.05) %>%
-  group_by(substrate, ecosystem, day) %>%
-  mutate(n_total_OTU = n())
-  
+```
+
+```{r, results='asis', message=FALSE, warning=FALSE}
+kable(enr.deseq.df %>% 
+        filter(padj < 0.05) %>%
+        group_by(substrate, ecosystem, day) %>%
+        mutate(n_total_OTU = n()))
 ```
 
 ### Taxonomy of enriched OTUs
-```{r}
-enr.deseq.df %>% 
-  filter(padj < 0.05) %>%
-  select(OTU) %>%
-  unique %>%
-  nrow()
-
+```{r, message=FALSE, warning=FALSE}
 enr.deseq.tax.df = data.frame(tax_table(enr.physeq), stringsAsFactors = FALSE) %>%
   tibble::rownames_to_column(var="OTU") %>%
   right_join(enr.deseq.df, by="OTU")
@@ -908,37 +909,10 @@ ggplot(data = enr.deseq.tax.sum, aes(x=ecosystem, y=n_OTU, fill=taxa)) +
 ```
 
 ### OTUs confirming SIP results
-```{r}
-enr.deseq.df %>% 
-  filter(padj < 0.05, OTU %in% unique(filter(l2fc.df, padj < 0.05)$OTU)) %>%
-  group_by(OTU) %>%
-  summarize(n = n())
 
-incorp.enr.deseq.df = l2fc.df %>%
-  filter(padj < 0.05) %>%
-  select(OTU, substrate, ecosystem, Domain, Phylum, Class, Order, Family, Genus, Species) %>%
-  unique %>%
-  mutate(substrate = gsub("13C", "12C", substrate)) %>%
-  inner_join(enr.deseq.df %>% filter(padj < 0.05), 
-             by = c("OTU", "substrate", "ecosystem"))
+Are any of these substrate enriched OTUs also 13C-labeled in the SIP study?
 
-incorp.enr.deseq.df %>%
-  group_by(OTU, Domain, Phylum, Class, Order, Family, Genus, Species) %>%
-  summarize(n_times = n())
-
-incorp.enr.deseq.df %>%
-  select(OTU, Family) %>%
-  unique %>%
-  group_by(Family) %>%
-  summarize(n_OTU = n())
-
-incorp.enr.deseq.df %>%
-  filter(Family == "Burkholderiaceae") %>%
-  select(OTU, Genus) %>%
-  unique %>%
-  group_by(Genus) %>%
-  summarize(n_OTU = n())
-
+```{r, results='asis', message=FALSE, warning=FALSE}
 ## Save results for publication table
 enr.tax.df = data.frame(tax_table(enr.physeq), stringsAsFactors = FALSE) %>%
   tibble::rownames_to_column(var="OTU") %>%
@@ -958,7 +932,9 @@ incorp.enr.df = l2fc.df %>%
   mutate(SIP_labeled = ifelse(is.na(SIP_labeled), "No", SIP_labeled)) %>%
   left_join(enr.tax.df, by="OTU")
 
-write.table(incorp.enr.df, file = "/Users/sambarnett/Desktop/labeled_enrichment_DESeq2_l2fc.txt", sep="\t", quote=FALSE, row.names = FALSE)
+#write.table(incorp.enr.df, file = "/Users/sambarnett/Desktop/labeled_enrichment_DESeq2_l2fc.txt", sep="\t", quote=FALSE, row.names = FALSE)
+
+kable(incorp.enr.df)
 
 ```
 

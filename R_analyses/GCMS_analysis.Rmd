@@ -17,7 +17,7 @@ The equipment used was the a Shimadzu GCMS-QP210S with a XXX column. 250µl head
 Dr. Lynn Johnson from the Cornell Statistical Consulting unit helped develop the linear mixed effects model analysis.
 
 #### Initialization
-```{r}
+```{r, results = FALSE, message=FALSE, warning=FALSE}
 # For data handling
 library(dplyr)
 
@@ -43,7 +43,7 @@ g_legend<-function(a.gplot){
 
 Area and height data are found in separate tab separated files for each timepoint and ion (mz44 and mz45). Here I'll read these files, remove the summary information and combine all files into a single dataframe.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Dataframe of timepoints and their sampling dates.
 date.df = data.frame(date = c(151108, 151110, 151112, 151114, 151116, 
                               151117, 151118, 151119, 151120, 151121, 
@@ -81,7 +81,7 @@ Reformat some of the columns so that they work better in R.
   * Retention time
   * Row id (X)
   
-```{r}
+```{r, message=FALSE, warning=FALSE}
 cleaned.raw.df = raw.df %>%
   select(Data.Filename, Sample.Type, Level, Area, Height, Std..Conc., ion, date, day) %>%
   rename(ID = Data.Filename, sample_type = Sample.Type, std_concentration = Std..Conc.) %>%
@@ -91,14 +91,13 @@ cleaned.raw.df = raw.df %>%
          Area = as.numeric(gsub(",", "", Area)),
          Height = as.numeric(gsub(",", "", Height)),
          ID = ifelse(ID == "unk_5perc_2.0_3", "unk_5perc_2.0ml_3", ID))
-cleaned.raw.df
 ```
 
 ## Calculate CO2 concentration and amount of carbon
 
 First I'll take the standards from each date and make a standard curve from which I can calculate the CO2 concentrations for each sample. I'll need to check each standard curve to remove any standards that seem to be off due to poor sampling or standard generation.
 
-```{r, fig.height=10, fig.width=10}
+```{r, fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
 # Dataframe of bad controls
 badstd.df = data.frame(Level=8,
                        status = "bad",
@@ -142,21 +141,16 @@ ggplot(data=std.raw.df) +
 
 Now I can use these individual standard curves to calculate the ppm concentration of CO2 in all my samples from each day.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Calculate the ppm of the CO2 based on the standard curve.
 CO2_conc.df = cleaned.raw.df %>%
   left_join(std_curve.df, by = c("ion", "date")) %>%
   mutate(CO2_ppm = (Area-intercept)/slope)
-
-# Do any samples have a calculated CO2 concentration below 0.
-CO2_conc.df[CO2_conc.df$CO2_ppm < 0,]
-
-CO2_conc.df
 ```
 
 Now I'll use the volume of each flask and the molar mass of carbon to calculate how much carbon is found in the headspace of each microcosm.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Get the flask volumes
 vols.df = read.table("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_backups_8_8_19/GCMS/microcosm_volume.txt", 
                      header=TRUE, sep="\t", stringsAsFactors = FALSE) %>%
@@ -171,11 +165,10 @@ mmCO2 = 44.01 # Molar mass of CO2
 CO2_conc.df = left_join(CO2_conc.df, vols.df, by = "ID") %>%
   mutate(mass_CO2 = 10^3*mmCO2*(CO2_ppm*vol*10^-9)/(temp*R),
          mass_C = 10^3*mmC*(CO2_ppm*vol*10^-9)/(temp*R))
-CO2_conc.df
 ```
 
 Now I need to calculate rates of mineralization and cummulative carbon mineralization over time.
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Set sampling periods and the previous day for each timepoint
 periods.df = data.frame(day = c(-8,-6,-4,-2,0,1,2,3,4,5,6,8,10,12,14,16,18,20,22,24,26,28,30),
                         prev_day = c(NA,-8,-6,-4,-2,0,1,2,3,4,5,6,8,10,12,14,16,18,20,22,24,26,28),
@@ -195,23 +188,23 @@ CO2_conc.df = CO2_conc.df %>%
 
 Finally, I'll save the required data that is needed for further analysis
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Keep just necessary columns so there isnt too much clutter
 CO2_conc.df = CO2_conc.df %>%
   select(ID, sample_type, Area, ion, date, day, CO2_ppm, mass_C, exp_period, C_rate, cum_C)
 
-write.table(CO2_conc.df, file="/Users/sambarnett/Documents/Buckley Lab/FullCyc2/Analysis/GCMS_calc_data.txt", 
-            quote=FALSE, sep="\t", row.names = FALSE, col.names = TRUE)
+#write.table(CO2_conc.df, file="/Users/sambarnett/Documents/Buckley Lab/FullCyc2/Analysis/GCMS_calc_data.txt", 
+#            quote=FALSE, sep="\t", row.names = FALSE, col.names = TRUE)
 
 ```
 
 
 ## Comparing total carbon mineralization rates across land-use
 
-For my first analysis I want to see if the total carbon mineralization rates differe between land use regimes over time. I will do this analysis using a linear mixed effects model. For this analysis we can use all samples from a land-use (except for the H2O-Con) as replicates since they were all treated the same except for the 13C label.
+For my first analysis I want to see if the total carbon mineralization rates differ between land use regimes over time. I will do this analysis using a linear mixed effects model. For this analysis we can use all samples from a land-use (except for the H2O-Con) as replicates since they were all treated the same except for the 13C label.
 
 First I'll load the data and remove samples that we don't want to analyze. I'll also combine the mz44 and mz45 together since we are looking at total carbon not specific ions.
-```{r}
+```{r, message=FALSE, warning=FALSE}
 GCMS.df = read.table(file="/Users/sambarnett/Documents/Buckley Lab/FullCyc2/Analysis/GCMS_calc_data.txt",
                      header = TRUE, sep="\t", stringsAsFactors = FALSE)
 
@@ -241,7 +234,7 @@ totalC.df = GCMS.df %>%
 
 Now I'll run the linear mixed effects model comparing land use mineralization rates over time.
 
-```{r, fig.height=3.34646, fig.width=6.69291}
+```{r, fig.height=3.34646, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Run the linear mixed effects model
 treat.model = lme(C_rate ~ ecosystem + day + ecosystem*day, random = ~1|ID,
                   data=totalC.df[totalC.df$substrate != "H2O-Con",], method="REML")
@@ -286,12 +279,12 @@ total_rate.plot = ggplot(data=rate_means.df, aes(x=day, y=lsmean, color=ecosyste
         axis.text = element_text(size=12))
 total_rate.plot
 
-ggsave(total_rate.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_2.tiff", 
-       device = "tiff", width = 6.69291, height = 3.34646, units = "in")
+#ggsave(total_rate.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_2.tiff", 
+#       device = "tiff", width = 6.69291, height = 3.34646, units = "in")
 
 ```
 
-```{r, fig.height=3.34646, fig.width=6.69291}
+```{r, fig.height=3.34646, fig.width=6.69291, message=FALSE, warning=FALSE}
 
 # Run the linear mixed effects model
 H2O.model = lme(C_rate ~ ecosystem + day + ecosystem*day, random = ~1|ID,
@@ -344,7 +337,7 @@ ggplot(data=H2O_rate_means.df, aes(x=day, y=lsmean, color=ecosystem)) +
 So clearly mineralization of total carbon differs across land-use regime in a particular pattern. Now I'll use the 13C-CO2 data (mz45) to specifically look at the mineralization of carbon from the substrates of interest. Here I am curious to see if the rates of carbon mineralization differ between land use regime differently across substrates. I'll use the same method as before and run a linear mixed effects model for each substrate individually to compare between land-use across time.
 
 First, I just need to subset out my data to get just the mz45 ion values.
-```{r}
+```{r, message=FALSE, warning=FALSE}
 GCMS.df = read.table(file="/Users/sambarnett/Documents/Buckley Lab/FullCyc2/Analysis/GCMS_calc_data.txt",
                      header = TRUE, sep="\t", stringsAsFactors = FALSE)
 
@@ -372,7 +365,7 @@ labeledC.df = GCMS.df %>%
 
 Now I'll run the linear mixed effects model comparing land use 13C mineralization rates over time.
 
-```{r, fig.height=6.69291, fig.width=6.69291}
+```{r, fig.height=6.69291, fig.width=6.69291, message=FALSE, warning=FALSE}
 # Run the linear mixed effects model for each substrate individually
 sub.model.list = list()
 sub.rate_lme.df = data.frame()
@@ -467,13 +460,13 @@ CO2_rates.plot = ggplot(data=sub.rate_means.df, aes(x=day, y=lsmean, color=ecosy
   facet_wrap(~substrate, nrow=6, scales = "free_y", labeller = labeller(substrate = new.labs))
 
 CO2_rates.plot
-ggsave(CO2_rates.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_1.tiff", 
-       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
+#ggsave(CO2_rates.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_1.tiff", 
+#       device = "tiff", width = 6.69291, height = 6.69291, units = "in")
 
 sub.rate_lme.df
 ```
 
-```{r, fig.height=6.69291, fig.width=3.46457}
+```{r, fig.height=6.69291, fig.width=3.46457, message=FALSE, warning=FALSE}
 # Run the linear mixed effects model for each substrate individually
 sub.model.list = list()
 sub.rate_lme.df = data.frame()
@@ -571,14 +564,14 @@ CO2_rates.plot = ggplot(data=sub.rate_means.df, aes(x=day, y=lsmean, color=ecosy
   facet_wrap(~substrate, nrow=6, scales = "free_y", labeller = labeller(substrate = new.labs))
 
 CO2_rates.plot
-ggsave(CO2_rates.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig1.tiff", 
-       device = "tiff", width = 3.46457, height = 6.69291, units = "in")
+#ggsave(CO2_rates.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig1.tiff", 
+#       device = "tiff", width = 3.46457, height = 6.69291, units = "in")
 
 sub.rate_lme.df
 ```
 
 2nd version for publication
-```{r, fig.height=6.69291, fig.width=3.46457}
+```{r, fig.height=6.69291, fig.width=3.46457, message=FALSE, warning=FALSE}
 # Run the linear mixed effects model for each substrate individually
 sub.model.list = list()
 sub.rate_lme.df = data.frame()
@@ -679,8 +672,8 @@ CO2_rates.plot = ggplot(data=sub.rate_means.df, aes(x=day, y=lsmean, color=ecosy
   facet_wrap(~substrate, nrow=6, scales = "free_y", labeller = labeller(substrate = new.labs))
 
 CO2_rates.plot
-ggsave(CO2_rates.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig1.tiff", 
-       device = "tiff", width = 3.46457, height = 6.69291, units = "in")
+#ggsave(CO2_rates.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig1.tiff", 
+#       device = "tiff", width = 3.46457, height = 6.69291, units = "in")
 
 ```
 
@@ -690,7 +683,7 @@ Now that I've shown that the rates of carbon mineralization differ across land u
 
 First I'll run this analysis for the total carbon.
 
-```{r, fig.width=3.34646, fig.height=3.93701}
+```{r, fig.width=3.34646, fig.height=3.93701, message=FALSE, warning=FALSE}
 # Get the day 14 and 30 cummulative total carbon mineralization values
 GCMS.df = read.table(file="/Users/sambarnett/Documents/Buckley Lab/FullCyc2/Analysis/GCMS_calc_data.txt",
                      header = TRUE, sep="\t", stringsAsFactors = FALSE)
@@ -769,15 +762,15 @@ total_cum.plot = ggplot(data=total_cum.df, aes(x=ecosystem, y=cum_C)) +
 
 total_cum.plot
 
-ggsave(total_cum.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_3.tiff", 
-       device = "tiff", width = 3.34646, height = 3.93701, units = "in")
+#ggsave(total_cum.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_3.tiff", 
+#       device = "tiff", width = 3.34646, height = 3.93701, units = "in")
 
 total_cum_posthoc.res
 ```
 
 Now I'll look at the cummulative carbon mineralized from each of the labeled substrates.
 
-```{r, fig.height=6.69291, fig.width=3.34646}
+```{r, fig.height=6.69291, fig.width=3.34646, message=FALSE, warning=FALSE}
 # Get the day 14 and 30 cummulative total carbon mineralization values
 GCMS.df = read.table(file="/Users/sambarnett/Documents/Buckley Lab/FullCyc2/Analysis/GCMS_calc_data.txt",
                      header = TRUE, sep="\t", stringsAsFactors = FALSE)
@@ -864,8 +857,8 @@ CO2_cum.plot = ggplot(data=labeled_cum.df, aes(x=ecosystem, y=cum_C)) +
 
 CO2_cum.plot
 
-ggsave(CO2_cum.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_4.tiff", 
-       device = "tiff", width = 3.34646, height = 6.69291, units = "in")
+#ggsave(CO2_cum.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_4.tiff", 
+#       device = "tiff", width = 3.34646, height = 6.69291, units = "in")
 
 labeled_cum_posthoc.res
 
