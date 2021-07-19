@@ -3,9 +3,9 @@ title: "Unfractionated Samples"
 author: "Samuel Barnett"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
-  html_document:
+  github_document:
     toc: true
-    toc_float: true
+    toc_depth: 2
 ---
 
 ## Introduction
@@ -19,6 +19,7 @@ This analysis allows us to see what the microbial communities within the microco
 # For data handling
 library(dplyr)
 library(phyloseq)
+library(knitr)
 
 # For analysis
 library(ape)
@@ -327,7 +328,7 @@ alpha_ttest.df = alpha_ttest.df %>%
          diversity = factor(diversity, levels = c("richness", "shannon", "simpson", "evenness")),
          treatment = factor(treatment, levels=c("Carbon", "Water")))
 
-alpha_ttest.df
+kable(alpha_ttest.df)
 ```
 
 Now I'll plot the results.
@@ -958,7 +959,7 @@ daypair_ttest.df = daypair_ttest.df %>%
          measure = factor(measure, levels = c("Bray-Curtis", "Unweighted UniFrac", "Weighted UniFrac"))) %>%
   left_join(unfrac_daypaired.dist.sum, by = c("ecosystem", "day", "treatment", "measure"))
 
-daypair_ttest.df
+kable(daypair_ttest.df)
 ```
 
 Now I'll plot the results.
@@ -1117,7 +1118,7 @@ ecopair_ttest.df = ecopair_ttest.df %>%
          measure = factor(measure, levels = c("Bray-Curtis", "Unweighted UniFrac", "Weighted UniFrac"))) %>%
   left_join(unfrac_ecopaired.dist.sum, by = c("eco_pair", "day", "treatment", "measure"))
 
-ecopair_ttest.df
+kable(ecopair_ttest.df)
 
 ```
 
