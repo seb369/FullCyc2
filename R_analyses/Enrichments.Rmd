@@ -1,0 +1,940 @@
+---
+title: "Analyses on Enrichment Microcosms"
+author: "Samuel Barnett"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 2
+---
+
+## Introduction
+
+In addition to SIP, we also ran a simple enrichment experiment, adding one 12C substrate to smaller microcoms containing ~ 5g soil. Unlike the SIP experiment, only one substrate was added to each microcosm and this time we used soil from all 10 locations, not just Monkey Run. Also we only sampled microcoms on two days for each substrate:
+
+* Days 2 and 4: xylose, amino acids, and vanillin
+* Days 14 and 28: cellulose and palmitic acid
+
+We also had water treated controls for each timepoint as something to compare against.
+
+In this notebook I will examine these samples both on their own and in relation to the incorporators identified in the MW-HR-SIP analysis.
+
+#### Initialization
+```{r, results = FALSE, message=FALSE, warning=FALSE}
+# For data handling
+library(dplyr)
+library(phyloseq)
+
+# For analysis
+library(vegan)
+library(nlme)
+library(lsmeans)
+
+# For plotting
+library(ggplot2)
+
+# Set color schemes
+eco.col = c(agriculture="#00BA38", meadow="#619CFF", forest="#F8766D")
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+```
+
+#### Data
+
+The OTU abundances and phylogeny can be found in the master phyloseq object.
+
+```{r, message=FALSE, warning=FALSE}
+# Import phyloseq object
+physeq = readRDS("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_backups_8_8_19/phyloseq/fullcyc2physeq.RDS")
+
+# Subset to just the unfractionated samples and remove the controls
+enr.physeq = subset_samples(physeq, exp_type == "Enrichment" & sample_type == "unknown")
+bulk.physeq = subset_samples(physeq, exp_type == "bulk" & sample_type == "unknown")
+physeq = NULL
+
+# Remove non-bacteria (aka Archaea)
+enr.physeq = subset_taxa(enr.physeq, Domain == "Bacteria")
+bulk.physeq = subset_taxa(bulk.physeq, Domain == "Bacteria")
+  
+# Add in a different phylogenetic tree. The one in the phyloseq might be an older version.
+tree = read_tree("/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_backups_8_8_19/fullcyc2.bacteria.cogent.tree")
+phy_tree(enr.physeq) = tree
+phy_tree(bulk.physeq) = tree
+
+# Remove any OTUs no longer found in the samples
+enr.physeq = prune_taxa(taxa_sums(enr.physeq) > 0, enr.physeq)
+bulk.physeq = prune_taxa(taxa_sums(bulk.physeq) > 0, bulk.physeq)
+
+```
+
+Incorporator status can be found in the log2 fold change dataframe.
+```{r, message=FALSE, warning=FALSE}
+# Get the l2fc dataframe and add in columns indicating the land-use, labeled substrate, and day
+l2fc.df = readRDS(file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/fullcyc2_l2fc_testoutput.rds") %>%
+  mutate(ecosystem  = factor(gsub(".+ecosystem == [ \']*([A-z]+).+", "\\1", .id),
+                             levels = c("agriculture", "meadow", "forest")),
+         day  = gsub(".+day == [ \']*([0-9]+).+", "\\1", .id),
+         substrate = factor(gsub(".+(13C-[A-z]+).+", "\\1", .id),
+                            levels = c("13C-Xyl", "13C-Ami", "13C-Van", "13C-Cel", "13C-Pal")))
+
+```
+
+For many of the following analyses I want a rarefied OTU table. This is one way to correct for differing sequencing depths across all my samples. I will set the seed for this process so that I can replicate this analysis if necessary (seed = 4242).
+
+```{r, message=FALSE, warning=FALSE}
+enr.rare.physeq = rarefy_even_depth(enr.physeq, rngseed=4242)
+bulk.rare.physeq = rarefy_even_depth(bulk.physeq, rngseed=4242)
+
+unique(colSums(otu_table(enr.rare.physeq)))
+```
+
+## Basic stats
+
+```{r, message=FALSE, warning=FALSE}
+print(paste("Maximum read count =", max(colSums(otu_table(enr.physeq)))))
+print(paste("Minimum read count =", min(colSums(otu_table(enr.physeq)))))
+print(paste("Rarefied read count =", unique(colSums(otu_table(enr.rare.physeq)))))
+
+print(paste("Number of OTUs total =", ntaxa(enr.physeq)))
+print(paste("Number of OTUs rarefied =", ntaxa(enr.rare.physeq)))
+
+print(paste("Number of phyla total =", length(unique(filter(data.frame(tax_table(enr.physeq), stringsAsFactors = FALSE), !(is.na(Phylum)))$Phylum))))
+print(paste("Number of phyla total =", length(unique(filter(data.frame(tax_table(enr.rare.physeq), stringsAsFactors = FALSE), !(is.na(Phylum)))$Phylum))))
+
+```
+
+
+## Diversity differences between treatment and control microcosms
+
+As with the SIP enrichments I want to see if there carbon addition leads to a shift in diversity.
+
+Here I'll calculate the desired alpha diveristy measures.
+
+```{r, message=FALSE, warning=FALSE}
+OTU.table = t(otu_table(enr.rare.physeq))
+alpha_div.df = data.frame(X.Sample = rownames(OTU.table), 
+                          richness = specnumber(OTU.table),
+                          shannon = diversity(OTU.table, index="shannon"),
+                          simpson = diversity(OTU.table, index="simpson")) %>%
+  mutate(evenness = shannon/log(richness)) %>%
+  left_join(data.frame(sample_data(enr.rare.physeq)) %>% select(X.Sample, ecosystem, substrate, day, location),
+            by = "X.Sample") %>%
+  mutate(ecosystem = factor(ecosystem, levels = c("agriculture", "meadow", "forest")),
+         substrate = factor(substrate, levels = c("H2O-Con", "12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+         time_point = ifelse(day %in% c(2, 14), "Early", "Late")) %>%
+  tidyr::gather(key="method", value="Treatment", 
+                -X.Sample, -ecosystem, -substrate, -day, -location, -time_point)
+
+alpha_div_H2O.df = alpha_div.df %>%
+  filter(substrate == "H2O-Con") %>%
+  rename(Control = Treatment) %>%
+  select(ecosystem, location, day, method, Control)
+
+alpha_div_treat.df = alpha_div.df %>%
+  filter(substrate != "H2O-Con") %>%
+  select(-X.Sample) %>%
+  left_join(alpha_div_H2O.df, by = c("ecosystem", "location", "day", "method")) %>%
+  tidyr::gather(key = "treatment", value = "diversity", -ecosystem, -substrate, -day, -location, -time_point, -method) %>%
+  arrange(ecosystem, substrate, day, location)
+
+```
+
+### Early timepoints
+Early timepoints are the first timepoint for each of the substrates (Day 2 for Xylose, amino acids, and vanillin; Day 14 for palmitic acid and cellulose). This is similar to the early timepoints for SIP and likely captures bacterial growth due to substrate addition more so than secondary feeding.
+
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
+## Get bulk
+bulk_meta.df = data.frame(sample_data(bulk.rare.physeq)) %>%
+  select(location, ecosystem, pH, organic_content_perc, DNA_conc__ng_ul) %>%
+  mutate(DNA_conc__ng_ul = as.numeric(as.character(DNA_conc__ng_ul)))
+
+evenness_early_meta.df = alpha_div_treat.df %>%
+  filter(method == "evenness", time_point == "Early") %>%
+  tidyr::spread(key=treatment, value=diversity) %>%
+  mutate(delta_evenness = Treatment-Control) %>%
+  left_join(bulk_meta.df, by = c("ecosystem", "location")) %>%
+  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")))
+
+## Compare to zero
+early_evenness_wilcox.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  model = wilcox.test(x = filter(evenness_early_meta.df, substrate==sub)$delta_evenness, alternative = "less", mu=0)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        Vstat = model$statistic,
+                        pvalue = model$p.value)
+  early_evenness_wilcox.df = rbind(early_evenness_wilcox.df, model.df)
+}
+
+early_evenness_wilcox.df = early_evenness_wilcox.df %>%
+  mutate(padj = p.adjust(pvalue, method = "BH", n = 5)) %>%
+  mutate(sig = ifelse(padj < 0.001, "***",
+                      ifelse(padj < 0.01, "**",
+                             ifelse(padj < 0.05, "*", "NS"))))
+
+early_evenness_wilcox.plot = ggplot(data=evenness_early_meta.df, aes(x=substrate, y=delta_evenness)) +
+  geom_hline(yintercept = 0, linetype=2, color="red") +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color=ecosystem), alpha=0.5) +
+  geom_text(data=filter(early_evenness_wilcox.df, padj < 0.05), aes(x=substrate, label=sig), y=0.06, size=6) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  labs(x="Substrate", y="Change in evenness", color="Land-use") +
+  lims(y=c(-0.3, 0.1)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=45, vjust=1, hjust=1),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top")
+
+
+## Compare with organic content
+early_SOM_evenness.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.evenness.df = filter(evenness_early_meta.df, substrate==sub)
+  cor.res = cor.test(x=sub.evenness.df$organic_content_perc, y=sub.evenness.df$delta_evenness)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  early_SOM_evenness.df = rbind(early_SOM_evenness.df, model.df)
+}
+
+early_evenness_SOM.plot = ggplot(data=evenness_early_meta.df, aes(x=organic_content_perc, y=delta_evenness)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=early_SOM_evenness.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=0.03, y=-0.2, hjust=0, parse = TRUE) +
+  geom_text(data=early_SOM_evenness.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=0.03, y=-0.235, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(-0.3, 0.1)) +
+  labs(x="% SOM in bulk soil", y="Change in evenness", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Compare with DNA concentration
+early_DNA_evenness.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.evenness.df = filter(evenness_early_meta.df, substrate==sub)
+  cor.res = cor.test(x=sub.evenness.df$DNA_conc__ng_ul, y=sub.evenness.df$delta_evenness)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  early_DNA_evenness.df = rbind(early_DNA_evenness.df, model.df)
+}
+
+early_evenness_DNA.plot = ggplot(data=evenness_early_meta.df, aes(x=DNA_conc__ng_ul, y=delta_evenness)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=early_DNA_evenness.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=5, y=-0.2, hjust=0, parse = TRUE) +
+  geom_text(data=early_DNA_evenness.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=5, y=-0.235, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(-0.3, 0.1)) +
+  labs(x="DNA Concentration", y="Change in evenness", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Plot together
+
+early_landuse.leg = g_legend(early_evenness_SOM.plot + theme(legend.direction = "vertical", 
+                                                             legend.box.background = element_rect(colour = "black")))
+
+early_alpha_SOM.plot = cowplot::plot_grid(early_evenness_wilcox.plot + theme(legend.position = "none"),
+                                          early_evenness_SOM.plot + theme(legend.position = "none", axis.title.y = element_blank()),
+                                          early_landuse.leg,
+                                          early_evenness_DNA.plot + theme(legend.position = "none", axis.title.y = element_blank()), 
+                                          ncol=2, labels=c("A", "B", "", "C"), rel_widths = c(0.5, 1, 0.5, 1))
+
+early_alpha_SOM.plot
+
+early_evenness_wilcox.df
+early_SOM_evenness.df
+early_DNA_evenness.df
+```
+
+### Late timepoints
+Late timepoints are the second timepoint for each of the substrates (Day 4 for Xylose, amino acids, and vanillin; Day 28 for palmitic acid and cellulose). This is similar to the late timepoints for SIP and likely captures bacterial growth due more to secondary feeding and late feeding on substrates.
+
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
+## Get bulk
+bulk_meta.df = data.frame(sample_data(bulk.rare.physeq)) %>%
+  select(location, ecosystem, pH, organic_content_perc, DNA_conc__ng_ul) %>%
+  mutate(DNA_conc__ng_ul = as.numeric(as.character(DNA_conc__ng_ul)))
+
+evenness_late_meta.df = alpha_div_treat.df %>%
+  filter(method == "evenness", time_point == "Late") %>%
+  tidyr::spread(key=treatment, value=diversity) %>%
+  mutate(delta_evenness = Treatment-Control) %>%
+  left_join(bulk_meta.df, by = c("ecosystem", "location")) %>%
+  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")))
+
+## Compare to zero
+late_evenness_wilcox.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  model = wilcox.test(x = filter(evenness_late_meta.df, substrate==sub)$delta_evenness, alternative = "less", mu=0)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        Vstat = model$statistic,
+                        pvalue = model$p.value)
+  late_evenness_wilcox.df = rbind(late_evenness_wilcox.df, model.df)
+}
+
+late_evenness_wilcox.df = late_evenness_wilcox.df %>%
+  mutate(padj = p.adjust(pvalue, method = "BH", n = 5)) %>%
+  mutate(sig = ifelse(padj < 0.001, "***",
+                      ifelse(padj < 0.01, "**",
+                             ifelse(padj < 0.05, "*", "NS"))))
+
+late_evenness_wilcox.plot = ggplot(data=evenness_late_meta.df, aes(x=substrate, y=delta_evenness)) +
+  geom_hline(yintercept = 0, linetype=2, color="red") +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color=ecosystem), alpha=0.5) +
+  geom_text(data=filter(late_evenness_wilcox.df, padj < 0.05), aes(x=substrate, label=sig), y=0.06, size=6) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  labs(x="Substrate", y="Change in evenness", color="Land-use") +
+  lims(y=c(-0.3, 0.1)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=45, vjust=1, hjust=1),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top")
+
+
+## Compare with organic content
+
+late_SOM_evenness.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.evenness.df = filter(evenness_late_meta.df, substrate==sub)
+  cor.res = cor.test(x=sub.evenness.df$organic_content_perc, y=sub.evenness.df$delta_evenness)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  late_SOM_evenness.df = rbind(late_SOM_evenness.df, model.df)
+}
+
+late_evenness_SOM.plot = ggplot(data=evenness_late_meta.df, aes(x=organic_content_perc, y=delta_evenness)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=late_SOM_evenness.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=0.03, y=-0.2, hjust=0, parse = TRUE) +
+  geom_text(data=late_SOM_evenness.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=0.03, y=-0.235, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(-0.3, 0.1)) +
+  labs(x="% SOM in bulk soil", y="Change in evenness", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Compare with DNA concentration
+late_DNA_evenness.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.evenness.df = filter(evenness_late_meta.df, substrate==sub)
+  cor.res = cor.test(x=sub.evenness.df$DNA_conc__ng_ul, y=sub.evenness.df$delta_evenness)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  late_DNA_evenness.df = rbind(late_DNA_evenness.df, model.df)
+}
+
+late_evenness_DNA.plot = ggplot(data=evenness_late_meta.df, aes(x=DNA_conc__ng_ul, y=delta_evenness)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=late_DNA_evenness.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=3, y=-0.2, hjust=0, parse = TRUE) +
+  geom_text(data=late_DNA_evenness.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=3, y=-0.235, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(-0.3, 0.1)) +
+  labs(x="DNA Concentration", y="Change in evenness", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Plot together
+
+late_landuse.leg = g_legend(late_evenness_SOM.plot + theme(legend.direction = "vertical", 
+                                                           legend.box.background = element_rect(colour = "black")))
+
+cowplot::plot_grid(late_evenness_wilcox.plot + theme(legend.position = "none"),
+                   late_evenness_SOM.plot + theme(legend.position = "none", axis.title.y = element_blank()),
+                   late_landuse.leg,
+                   late_evenness_DNA.plot + theme(legend.position = "none", axis.title.y = element_blank()), 
+                   ncol=2, labels=c("A", "B", "", "C"), rel_widths = c(0.5, 1, 0.5, 1))
+
+late_evenness_wilcox.df
+late_SOM_evenness.df
+late_DNA_evenness.df
+
+```
+
+## Community composition difference between treatment and control microcosms
+
+Since these are enrichments we cannot identify specific OTUs that have taken up a given substrate, however we can look at the community level change due to the substrate by comparing the treament microcosms to their corresponding water controls.
+
+The first thing I need to do is measure the distance or dissimilarity between all microcosm communities. I will use three metrics for this: Bray-Curtis dissimilarity, unweighted UniFrac distance, and weighted UniFrac.
+
+```{r, message=FALSE, warning=FALSE}
+enr_BC.dist = vegdist(t(otu_table(enr.rare.physeq)), method="bray", binary=FALSE, diag=TRUE, upper=TRUE)
+enr_uwUF.dist = distance(enr.rare.physeq, method="unifrac")
+enr_wUF.dist = distance(enr.rare.physeq, method="wunifrac")
+```
+
+### PERMANOVA
+
+```{r, message=FALSE, warning=FALSE}
+print("Bray-Curtis dissimilarity")
+enr_BC.adonis = adonis(formula = enr_BC.dist ~ ecosystem * substrate * day, data = as(sample_data(enr.rare.physeq), "data.frame"))
+enr_BC.adonis
+print("-----")
+
+print("Unweighted UniFrac distance")
+enr_uwUF.adonis = adonis(formula = enr_uwUF.dist ~ ecosystem * substrate * day, data = as(sample_data(enr.rare.physeq), "data.frame"))
+enr_uwUF.adonis
+print("-----")
+
+print("Weighted UniFrac distance")
+enr_wUF.adonis = adonis(formula = enr_wUF.dist ~ ecosystem * substrate * day, data = as(sample_data(enr.rare.physeq), "data.frame"))
+enr_wUF.adonis
+print("-----")
+```
+
+
+### Distances/Dissimilarities
+
+Substrate significantly explains varaition in community composition as does ecosystem. Now I want to see if the differences between water controls and treatments correlate with either SOM or [DNA].
+
+```{r, message=FALSE, warning=FALSE}
+bulk_meta.df = data.frame(sample_data(bulk.rare.physeq)) %>%
+  select(location, ecosystem, pH, organic_content_perc, DNA_conc__ng_ul) %>%
+  mutate(DNA_conc__ng_ul = as.numeric(as.character(DNA_conc__ng_ul)))
+
+H2O.metadata = data.frame(sample_data(enr.rare.physeq)) %>%
+  mutate(X.Sample = as.character(X.Sample)) %>%
+  filter(substrate == "H2O-Con") %>%
+  rename(Control = X.Sample) %>%
+  select(Control, day, ecosystem, location)
+
+treat.metadata = data.frame(sample_data(enr.rare.physeq)) %>%
+  mutate(X.Sample = as.character(X.Sample)) %>%
+  filter(substrate != "H2O-Con") %>%
+  rename(Treatment = X.Sample) %>%
+  select(Treatment, substrate, day, ecosystem, location)
+
+paired.metadata = inner_join(H2O.metadata, treat.metadata, by = c("day", "ecosystem", "location"))
+
+enr_BC.dist.df = as.matrix(enr_BC.dist)[paired.metadata$Treatment, paired.metadata$Control] %>%
+  as.data.frame %>%
+  tibble::rownames_to_column(var="X.Sample") %>%
+  rename(Treatment = X.Sample) %>%
+  tidyr::gather(key=Control, value=bray, -Treatment)
+
+enr_uwUF.dist.df = as.matrix(enr_uwUF.dist)[paired.metadata$Treatment, paired.metadata$Control] %>%
+  as.data.frame %>%
+  tibble::rownames_to_column(var="X.Sample") %>%
+  rename(Treatment = X.Sample) %>%
+  tidyr::gather(key=Control, value=uwUF, -Treatment)
+
+enr_wUF.dist.df = as.matrix(enr_wUF.dist)[paired.metadata$Treatment, paired.metadata$Control] %>%
+  as.data.frame %>%
+  tibble::rownames_to_column(var="X.Sample") %>%
+  rename(Treatment = X.Sample) %>%
+  tidyr::gather(key=Control, value=wUF, -Treatment)
+
+enr_dist.df = full_join(enr_BC.dist.df, enr_uwUF.dist.df, by = c("Treatment", "Control")) %>%
+  full_join(enr_wUF.dist.df, by = c("Treatment", "Control")) %>%
+  inner_join(paired.metadata, by = c("Treatment", "Control")) %>%
+  mutate(time_point = ifelse(day %in% c(2, 14), "Early", "Late"),
+         ecosystem = factor(ecosystem, levels = c("agriculture", "meadow", "forest")),
+         substrate = factor(substrate, levels = c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal"))) %>%
+  left_join(bulk_meta.df, by = c("ecosystem", "location")) %>%
+  mutate(location = gsub("_", " ", location))
+
+```
+
+#### Early timepoints
+
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
+## Filter to just early timepoints
+early_enr_dist.df = enr_dist.df %>%
+  filter(time_point == "Early") %>%
+  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")))
+
+## Compare with organic content
+early_SOM_wUF.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.wUF.df = filter(early_enr_dist.df, substrate==sub)
+  cor.res = cor.test(x=sub.wUF.df$organic_content_perc, y=sub.wUF.df$wUF)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  early_SOM_wUF.df = rbind(early_SOM_wUF.df, model.df)
+}
+
+early_wUF_SOM.plot = ggplot(data=early_enr_dist.df, aes(x=organic_content_perc, y=wUF)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=early_SOM_wUF.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=0.04, y=0.4, hjust=0, parse = TRUE) +
+  geom_text(data=early_SOM_wUF.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=0.04, y=0.36, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(0, 0.45)) +
+  labs(x="% SOM in bulk soil", y="Weighted UniFrac Distance", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Compare with DNA concentration
+early_DNA_wUF.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.wUF.df = filter(early_enr_dist.df, substrate==sub)
+  cor.res = cor.test(x=sub.wUF.df$DNA_conc__ng_ul, y=sub.wUF.df$wUF)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  early_DNA_wUF.df = rbind(early_DNA_wUF.df, model.df)
+}
+
+early_wUF_DNA.plot = ggplot(data=early_enr_dist.df, aes(x=DNA_conc__ng_ul, y=wUF)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=early_DNA_wUF.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=5, y=0.4, hjust=0, parse = TRUE) +
+  geom_text(data=early_DNA_wUF.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=5, y=0.36, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(0, 0.45)) +
+  labs(x="DNA Concentration", y="Weighted UniFrac Distance", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Plot together
+
+early_landuse.leg = g_legend(early_wUF_SOM.plot + theme(legend.direction = "horizontal", 
+                                                        legend.position = "top",
+                                                        legend.margin=unit(c(0,0,0,0),"cm")))
+
+cowplot::plot_grid(early_landuse.leg,
+                   early_wUF_SOM.plot + theme(legend.position = "none"),
+                   early_wUF_DNA.plot + theme(legend.position = "none"), 
+                   ncol=1, labels=c("", "A", "B"), rel_heights = c(0.1, 1, 1))
+
+early_SOM_wUF.df
+early_DNA_wUF.df
+
+```
+
+#### Late timepoints
+
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
+## Filter to just late timepoints
+late_enr_dist.df = enr_dist.df %>%
+  filter(time_point == "Late") %>%
+  mutate(ecosystem = factor(ecosystem, levels=c("agriculture", "meadow", "forest")))
+
+## Compare with organic content
+late_SOM_wUF.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.wUF.df = filter(late_enr_dist.df, substrate==sub)
+  cor.res = cor.test(x=sub.wUF.df$organic_content_perc, y=sub.wUF.df$wUF)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  late_SOM_wUF.df = rbind(late_SOM_wUF.df, model.df)
+}
+
+late_wUF_SOM.plot = ggplot(data=late_enr_dist.df, aes(x=organic_content_perc, y=wUF)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=late_SOM_wUF.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=0.04, y=0.4, hjust=0, parse = TRUE) +
+  geom_text(data=late_SOM_wUF.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=0.04, y=0.36, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(0, 0.45)) +
+  labs(x="% SOM in bulk soil", y="Weighted UniFrac Distance", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Compare with DNA concentration
+late_DNA_wUF.df = data.frame()
+for (sub in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+  sub.wUF.df = filter(late_enr_dist.df, substrate==sub)
+  cor.res = cor.test(x=sub.wUF.df$DNA_conc__ng_ul, y=sub.wUF.df$wUF)
+  model.df = data.frame(substrate = factor(sub, levels=c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")),
+                        r = cor.res$estimate,
+                        pvalue = cor.res$p.value)  %>%
+    mutate(padj = p.adjust(pvalue, method = "BH", n = 5))
+  late_DNA_wUF.df = rbind(late_DNA_wUF.df, model.df)
+}
+
+late_wUF_DNA.plot = ggplot(data=late_enr_dist.df, aes(x=DNA_conc__ng_ul, y=wUF)) +
+  geom_smooth(method="lm", se=FALSE, color="grey70", size=0.75) +
+  geom_point(aes(color=ecosystem)) +
+  geom_text(data=late_DNA_wUF.df, aes(label=paste("r==", round(r, 3), sep="")),
+            x=5, y=0.4, hjust=0, parse = TRUE) +
+  geom_text(data=late_DNA_wUF.df, aes(label=paste("p==", round(padj, 3), sep="")),
+            x=5, y=0.36, hjust=0, parse = TRUE) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  lims(y=c(0, 0.45)) +
+  labs(x="DNA Concentration", y="Weighted UniFrac Distance", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=12, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=12),
+        axis.title = element_text(size=12),
+        strip.text = element_text(size=12),
+        legend.text = element_text(size=12),
+        legend.title = element_text(size=12),
+        legend.position = "top") +
+  facet_wrap(~factor(gsub("12C-", "", substrate), levels=c("Xyl", "Ami", "Van", "Cel", "Pal")), nrow=1)
+
+## Plot together
+
+late_landuse.leg = g_legend(late_wUF_SOM.plot + theme(legend.direction = "horizontal", 
+                                            legend.position = "top",
+                                            legend.margin=unit(c(0,0,0,0),"cm")))
+
+cowplot::plot_grid(late_landuse.leg,
+                   late_wUF_SOM.plot + theme(legend.position = "none"),
+                   late_wUF_DNA.plot + theme(legend.position = "none"), 
+                   ncol=1, labels=c("", "A", "B"), rel_heights = c(0.1, 1, 1))
+
+late_SOM_wUF.df
+late_DNA_wUF.df
+```
+
+## Diversity plots for publication
+
+These will be the plots from the analyses above that are used in the publication of this study (and my PhD dissertation).
+
+### Early timepoints
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
+early_landuse.leg = g_legend(early_evenness_SOM.plot + theme(legend.direction = "vertical", 
+                                                             legend.box.background = element_rect(colour = "black")))
+
+early_DNAyield.plot = cowplot::plot_grid(early_evenness_wilcox.plot + theme(legend.position = "none"),
+                                         early_evenness_DNA.plot + theme(legend.position = "none") + labs(x="DNA yield from bulk soil (ng/µl)", y="Change in evenness"),
+                                         early_landuse.leg,
+                                         early_wUF_DNA.plot + theme(legend.position = "none") + labs(x="DNA yield from bulk soil (ng/µl)", y="Weighted UniFrac distance"), 
+                                         ncol=2, labels=c("A", "B", "", "C"), rel_widths = c(0.5, 1, 0.5, 1))
+
+early_DNAyield.plot
+
+#ggsave(early_DNAyield.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/fig2_5.tiff", 
+#       device = "tiff", width = 7, height = 6, units = "in")
+
+
+```
+
+For publication
+
+```{r, fig.height=7.08661, fig.width=3.46457, message=FALSE, warning=FALSE}
+carbon.conv = data.frame(substrate = c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal"),
+                         carbon = factor(c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid"),
+                                         levels=c("Xylose", "Amino acids", "Vanillin", "Cellulose", "Palmitic acid")))
+
+pub_early_evenness_wilcox.plot = ggplot(data=left_join(evenness_early_meta.df, carbon.conv, by="substrate"), aes(x=carbon, y=delta_evenness)) +
+  geom_hline(yintercept = 0, linetype=2, color="red") +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(aes(color=ecosystem), alpha=0.5, size=1.5) +
+  geom_text(data=filter(left_join(early_evenness_wilcox.df, carbon.conv, by="substrate"), padj < 0.05), aes(x=carbon, label=sig), y=0.06, size=4) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  labs(x="Substrate", y="Change in evenness", color="Land-use") +
+  lims(y=c(-0.3, 0.1)) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=6, angle=45, vjust=1, hjust=1),
+        axis.text.y = element_text(size=6),
+        axis.title = element_text(size=7),
+        axis.ticks = element_line(size=0.2),
+        strip.text = element_text(size=6),
+        legend.text = element_text(size=6),
+        legend.title = element_text(size=7),
+        legend.position = "right",
+        legend.box.background = element_rect(colour = "black"))
+
+pub_early_evenness_DNA.plot = ggplot(data=left_join(evenness_early_meta.df, carbon.conv, by="substrate"), aes(x=DNA_conc__ng_ul, y=delta_evenness)) +
+  geom_smooth(method="lm", se=FALSE, color="black", size=0.75) +
+  geom_point(aes(color=ecosystem), size=1.5) +
+  geom_text(data=left_join(early_DNA_evenness.df, carbon.conv, by="substrate"), aes(label=paste("r==", round(r, 3), sep="")),
+            x=15, y=-0.2, hjust=0, parse = TRUE, size=(6*5/14)) +
+  geom_text(data=left_join(early_DNA_evenness.df, carbon.conv, by="substrate"), aes(label=paste("p==", round(padj, 3), sep="")),
+            x=15, y=-0.235, hjust=0, parse = TRUE, size=(6*5/14)) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  scale_x_continuous(breaks=c(0,  50, 100)) +
+  lims(y=c(-0.3, 0.1)) +
+  labs(x="DNA Concentration", y="Change in evenness", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=6, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=6),
+        axis.title = element_text(size=7),
+        axis.ticks = element_line(size=0.2),
+        strip.text = element_text(size=6),
+        legend.text = element_text(size=6),
+        legend.title = element_text(size=7),
+        legend.position = "right") +
+  facet_wrap(~carbon, nrow=1)
+
+
+pub_early_wUF_DNA.plot = ggplot(data=left_join(early_enr_dist.df, carbon.conv, by="substrate"), aes(x=DNA_conc__ng_ul, y=wUF)) +
+  geom_smooth(method="lm", se=FALSE, color="black", size=0.75) +
+  geom_point(aes(color=ecosystem), size=1.5) +
+  geom_text(data=left_join(early_DNA_wUF.df, carbon.conv, by="substrate"), aes(label=paste("r==", round(r, 3), sep="")),
+            x=15, y=0.4, hjust=0, parse = TRUE, size=(6*5/14)) +
+  geom_text(data=left_join(early_DNA_wUF.df, carbon.conv, by="substrate"), aes(label=paste("p==", round(padj, 3), sep="")),
+            x=15, y=0.36, hjust=0, parse = TRUE, size=(6*5/14)) +
+  scale_color_manual(values = eco.col, labels = c("agriculture" = "Cropland", "meadow" = "Old-Field", "forest" = "Forest")) +
+  scale_x_continuous(breaks=c(0,  50, 100)) +
+  lims(y=c(0, 0.45)) +
+  labs(x="DNA Concentration", y="Weighted UniFrac Distance", color="Land-use") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(size=6, angle=90, vjust=0.5),
+        axis.text.y = element_text(size=6),
+        axis.title = element_text(size=7),
+        axis.ticks = element_line(size=0.2),
+        strip.text = element_text(size=6),
+        legend.text = element_text(size=6),
+        legend.title = element_text(size=7),
+        legend.position = "right") +
+  facet_wrap(~carbon, nrow=1)
+
+pub_early_landuse.leg = g_legend(pub_early_wUF_DNA.plot + theme(legend.box.background = element_rect(colour = "black"),
+                                                                legend.title = element_text(size=7, hjust=0.5)))
+
+
+pub_early_evenness_wilcox_leg.plot = cowplot::plot_grid(pub_early_evenness_wilcox.plot + theme(legend.position = "none"), 
+                                                        pub_early_landuse.leg, ncol=2, rel_widths = c(1, 0.41))
+
+pub_early_DNAyield.plot = cowplot::plot_grid(pub_early_evenness_wilcox_leg.plot,
+                                             pub_early_evenness_DNA.plot + theme(legend.position = "none") + labs(x="DNA yield from bulk soil (ng/µl)", y="Change in evenness"),
+                                             pub_early_wUF_DNA.plot + theme(legend.position = "none") + labs(x="DNA yield from bulk soil (ng/µl)", y="Weighted UniFrac distance"), 
+                                             ncol=1, labels=c("a", "b", "c"), label_size = 10, rel_heights = c(0.9, 1, 1))
+
+pub_early_DNAyield.plot
+
+#ggsave(pub_early_DNAyield.plot, filename = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/manuscript/Figures/Fig3.tiff", 
+#       device = "tiff", width = 3.46457, height = 7.08661, units = "in")
+
+
+```
+
+
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
+
+early_landuse.leg = g_legend(early_wUF_SOM.plot + theme(legend.direction = "horizontal", 
+                                                        legend.position = "top",
+                                                        legend.margin=unit(c(0,0,0,0),"cm")))
+early_SOM.plot = cowplot::plot_grid(early_landuse.leg,
+                                    early_evenness_SOM.plot + theme(legend.position = "none") + labs(x="Percent SOM in bulk soil (%)", y="Change in evenness"),
+                                    early_wUF_SOM.plot + theme(legend.position = "none") + labs(x="Percent SOM in bulk soil (%)", y="Weighted UniFrac distance"), 
+                                    ncol=1, labels=c("", "A", "B"), rel_heights = c(0.1, 1, 1))
+
+early_SOM.plot
+
+#ggsave(early_SOM.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_11.tiff", 
+#       device = "tiff", width = 5, height = 7, units = "in")
+
+```
+
+### Late timepoints 
+
+```{r, fig.height=6, fig.width=7, message=FALSE, warning=FALSE}
+late_landuse.leg = g_legend(late_evenness_SOM.plot + theme(legend.direction = "vertical", 
+                                                           legend.box.background = element_rect(colour = "black")))
+
+late_DNAyield.plot = cowplot::plot_grid(late_evenness_wilcox.plot + theme(legend.position = "none"),
+                                        late_evenness_DNA.plot + theme(legend.position = "none") + labs(x="DNA yield from bulk soil (ng/µl)", y="Change in evenness"),
+                                        late_landuse.leg,
+                                        late_wUF_DNA.plot + theme(legend.position = "none") + labs(x="DNA yield from bulk soil (ng/µl)", y="Weighted UniFrac distance"), 
+                                        ncol=2, labels=c("A", "B", "", "C"), rel_widths = c(0.5, 1, 0.5, 1))
+
+late_DNAyield.plot
+
+#ggsave(late_DNAyield.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_12.tiff", 
+#       device = "tiff", width = 7, height = 6, units = "in")
+
+
+```
+
+```{r, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
+
+late_landuse.leg = g_legend(late_wUF_SOM.plot + theme(legend.direction = "horizontal", 
+                                                      legend.position = "top",
+                                                      legend.margin=unit(c(0,0,0,0),"cm")))
+late_SOM.plot = cowplot::plot_grid(late_landuse.leg,
+                                   late_evenness_SOM.plot + theme(legend.position = "none") + labs(x="Percent SOM in bulk soil (%)", y="Change in evenness"),
+                                   late_wUF_SOM.plot + theme(legend.position = "none") + labs(x="Percent SOM in bulk soil (%)", y="Weighted UniFrac distance"), 
+                                   ncol=1, labels=c("", "A", "B"), rel_heights = c(0.1, 1, 1))
+
+late_SOM.plot
+
+#ggsave(late_SOM.plot, filename = "/Users/sambarnett/Documents/Dissertation/figures/figS2_13.tiff", 
+#       device = "tiff", width = 5, height = 7, units = "in")
+
+```
+
+
+## DESeq2 significant enrichments
+
+Now I want to see if I can identify any OTUs that are significantly enriched in the substrate treated samples compared to the control samples.
+
+```{r, results = FALSE, message=FALSE, warning=FALSE}
+library(DESeq2)
+library(knitr)
+
+enr.deseq.df = data.frame()
+for (eco in c("agriculture", "meadow", "forest")){
+  for (carbon in c("12C-Xyl", "12C-Ami", "12C-Van", "12C-Cel", "12C-Pal")){
+    for (dia in unique(filter(data.frame(sample_data(enr.physeq)), ecosystem == eco, substrate == carbon)$day)){
+      sub.physeq = subset_samples(enr.physeq, ecosystem == eco & substrate %in% c(carbon, "H2O-Con") & day == dia)
+      sub.physeq = prune_taxa(taxa_sums(sub.physeq) > 0, sub.physeq)
+      sample_data(sub.physeq)$substrate = as.factor(sample_data(sub.physeq)$substrate)
+      sample_data(sub.physeq)$substrate = relevel(sample_data(sub.physeq)$substrate, "H2O-Con")
+      
+      OTU.table = as.matrix(otu_table(sub.physeq))
+      OTU.table[OTU.table < 5] = 0
+      OTU.table[OTU.table >= 5] = 1
+      sparse = length(sample_names(sub.physeq)) * 0.25
+      sampleCount.df = data.frame(sample = rowSums(OTU.table)) %>%
+        tibble::rownames_to_column(var="OTU") %>%
+        filter(sample >= sparse)
+      sub.physeq = prune_taxa(sampleCount.df$OTU, sub.physeq)
+      sub.deseq = phyloseq_to_deseq2(sub.physeq, ~ location + substrate)
+      sub.deseq = DESeq(sub.deseq, betaPrior=TRUE)
+      sub.deseq.res = results(sub.deseq, lfcThreshold = .25,
+                              contrast = c("substrate", carbon, "H2O-Con"), 
+                              altHypothesis = "greater",
+                              test="Wald")
+      enr.deseq.df = rbind(enr.deseq.df, data.frame(sub.deseq.res) %>%
+                             tibble::rownames_to_column(var="OTU") %>%
+                             mutate(substrate = carbon, ecosystem = eco, day = dia))
+    }
+  }
+}
+
+#write.table(enr.deseq.df, file = "/Users/sambarnett/Documents/Buckley Lab/FullCyc2/enrichment_DESeq2_l2fc.txt", sep="\t", quote=FALSE, row.names = FALSE)
+
+```
+
+```{r, results='asis', message=FALSE, warning=FALSE}
+kable(enr.deseq.df %>% 
+        filter(padj < 0.05) %>%
+        group_by(substrate, ecosystem, day) %>%
+        mutate(n_total_OTU = n()))
+```
+
+### Taxonomy of enriched OTUs
+```{r, message=FALSE, warning=FALSE}
+enr.deseq.tax.df = data.frame(tax_table(enr.physeq), stringsAsFactors = FALSE) %>%
+  tibble::rownames_to_column(var="OTU") %>%
+  right_join(enr.deseq.df, by="OTU")
+
+enr.deseq.tax.sum = enr.deseq.tax.df %>%
+  filter(padj < 0.05) %>%
+  mutate(taxa = ifelse(Phylum == "Proteobacteria", Class, 
+                       ifelse(is.na(Phylum), "Unclassified", Phylum)),
+         period = ifelse(day %in% c(2, 14), "Early", "Late")) %>%
+  group_by(ecosystem, substrate, period, taxa) %>%
+  summarize(n_OTU = n()) %>%
+  as.data.frame
+
+ggplot(data = enr.deseq.tax.sum, aes(x=ecosystem, y=n_OTU, fill=taxa)) +
+  geom_bar(stat = "identity") +
+  facet_grid(substrate~period)
+
+
+  
+```
+
+### OTUs confirming SIP results
+
+Are any of these substrate enriched OTUs also 13C-labeled in the SIP study?
+
+```{r, results='asis', message=FALSE, warning=FALSE}
+## Save results for publication table
+enr.tax.df = data.frame(tax_table(enr.physeq), stringsAsFactors = FALSE) %>%
+  tibble::rownames_to_column(var="OTU") %>%
+  filter(OTU %in% filter(enr.deseq.df, padj < 0.05)$OTU)
+
+incorp.enr.df = l2fc.df %>%
+  filter(padj < 0.05) %>%
+  select(OTU, substrate, ecosystem) %>%
+  unique %>%
+  mutate(substrate = gsub("13C", "12C", substrate),
+         SIP_labeled = "Yes") %>%
+  inner_join(enr.deseq.df %>% filter(padj < 0.05), 
+             by = c("OTU", "substrate", "ecosystem")) %>%
+  select(OTU, substrate, ecosystem, SIP_labeled) %>%
+  right_join(enr.deseq.df %>% filter(padj < 0.05),
+             by = c("OTU", "substrate", "ecosystem")) %>%
+  mutate(SIP_labeled = ifelse(is.na(SIP_labeled), "No", SIP_labeled)) %>%
+  left_join(enr.tax.df, by="OTU")
+
+#write.table(incorp.enr.df, file = "/Users/sambarnett/Desktop/labeled_enrichment_DESeq2_l2fc.txt", sep="\t", quote=FALSE, row.names = FALSE)
+
+kable(incorp.enr.df)
+
+```
+
