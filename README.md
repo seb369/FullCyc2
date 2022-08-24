@@ -2,9 +2,9 @@
 
 This repository contains the code and some data used in the analysis of the DNA stable isotope probing study examining bacterial assimilation of carbon from 5 distinct substrates across cropland, old-field, and forest soils. 
 
-The paper to which this analysis belongs is titled "Bacterial community dynamics explain carbon mineralization and assimilation in soils of different land-use history" (DOI:10.1101/2022.02.16.480692) and can be cited as:
+The paper to which this analysis belongs is titled "Bacterial community dynamics explain carbon mineralization and assimilation in soils of different land-use history" (DOI:10.1111/1462-2920.16146) and can be cited as:
 
-Barnett, S. E., Youngblut, N. D., & Buckley, D. H. (2022). Bacterial community dynamics explain carbon mineralization and assimilation in soils of different land-use history. BioRxiv, 2022.02.16.480692. https://doi.org/10.1101/2022.02.16.480692
+Barnett, S.E., Youngblut, N.D. & Buckley, D.H. (2022) Bacterial community dynamics explain carbon mineralization and assimilation in soils of different land-use history. Environmental Microbiology, 1– 18. Available from: https://doi.org/10.1111/1462-2920.16146
 
 
 ## Files
